@@ -7,6 +7,7 @@ import { plugin } from "../src/plugin.js";
 import { createDatabase, closeDatabase } from "../src/services/database.js";
 import { createEmbeddingService } from "../src/services/embedding.js";
 import { createMemoryStore } from "../src/services/memory-store.js";
+import { createVectorBackend } from "../src/services/vector-backend.js";
 import { createMemoryTool } from "../src/services/tool.js";
 import type { PluginConfig } from "../src/types.js";
 
@@ -97,7 +98,8 @@ describe("plugin integration", () => {
 
     try {
       const embeddingService = createEmbeddingService(config);
-      const store = createMemoryStore(db, embeddingService, config);
+      const vectorBackend = await createVectorBackend(db, config.embeddingDimensions);
+      const store = createMemoryStore(db, embeddingService, config, vectorBackend);
       const memoryTool = createMemoryTool(store, config);
 
       const addResult = await memoryTool.execute(

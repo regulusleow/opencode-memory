@@ -11,7 +11,7 @@
   "dependencies": {
     "@opencode-ai/plugin": "latest",
     "@opencode-ai/sdk": "latest",
-    "sqlite-vec": "latest"
+    "usearch": "^2.21.4"
   },
   "devDependencies": {
     "@types/bun": "latest",

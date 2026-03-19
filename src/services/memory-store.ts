@@ -2,6 +2,8 @@ import type { Database } from "bun:sqlite";
 import { generateMemoryId } from "../config.js";
 import type { EmbeddingService } from "./embedding.js";
 import type { Memory, MemorySearchResult, PluginConfig } from "../types.js";
+import type { VectorBackend } from "./vector-backend.js";
+import { encodeVector } from "./vector-backend.js";
 
 export interface MemoryStore {
   add(
@@ -43,7 +45,8 @@ function rowToMemory(row: any): Memory {
 export function createMemoryStore(
   db: Database,
   embeddingService: EmbeddingService,
-  config: PluginConfig
+  config: PluginConfig,
+  vectorBackend: VectorBackend
 ): MemoryStore {
   return {
     async add(content, options) {
@@ -61,10 +64,9 @@ export function createMemoryStore(
         const embeddingResult = await embeddingService.embed(content);
 
         if ("embedding" in embeddingResult) {
-          db.query("INSERT INTO memory_vectors (id, embedding) VALUES (?, ?)").run(
-            id,
-            new Float32Array(embeddingResult.embedding)
-          );
+          const vector = new Float32Array(embeddingResult.embedding);
+          db.query("UPDATE memories SET vector = ? WHERE id = ?").run(encodeVector(vector), id);
+          await vectorBackend.add(id, vector);
 
           const updatedAt = Date.now();
           db.query(
@@ -114,14 +116,8 @@ export function createMemoryStore(
 
         const vectorResults: MemorySearchResult[] = [];
         if ("embedding" in queryEmbedding) {
-          const matches = db
-            .query(
-              "SELECT id, distance FROM memory_vectors WHERE embedding MATCH ? ORDER BY distance LIMIT ?"
-            )
-            .all(new Float32Array(queryEmbedding.embedding), finalLimit) as Array<{
-            id: string;
-            distance: number;
-          }>;
+          const queryVec = new Float32Array(queryEmbedding.embedding);
+          const matches = await vectorBackend.search(queryVec, finalLimit);
 
           for (const match of matches) {
             const row = db
@@ -134,8 +130,8 @@ export function createMemoryStore(
             const memory = rowToMemory(row);
             vectorResults.push({
               ...memory,
-              distance: match.distance,
-              score: 1 / (1 + match.distance),
+              score: match.score,
+              distance: 1 - match.score,
             });
           }
         }
@@ -217,7 +213,7 @@ export function createMemoryStore(
           .query("DELETE FROM memories WHERE id = ?")
           .run(memoryId) as { changes: number };
 
-        db.query("DELETE FROM memory_vectors WHERE id = ?").run(memoryId);
+        await vectorBackend.remove(memoryId);
 
         return deleted.changes > 0;
       } catch {
@@ -269,9 +265,9 @@ export function createMemoryStore(
           }
 
           if ("embedding" in result) {
-            db.query(
-              "INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?, ?)"
-            ).run(row.id, new Float32Array(result.embedding));
+            const vector = new Float32Array(result.embedding);
+            db.query("UPDATE memories SET vector = ? WHERE id = ?").run(encodeVector(vector), row.id);
+            await vectorBackend.add(row.id, vector);
 
             db.query(
               "UPDATE memories SET embedding_status = 'done', updated_at = ? WHERE id = ?"

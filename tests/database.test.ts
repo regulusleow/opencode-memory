@@ -19,7 +19,7 @@ describe("database module", () => {
     closeDatabase(db);
   });
 
-  it("creates memories and memory_vectors schema", () => {
+  it("creates memories table without any virtual table", () => {
     const db = createDatabase(":memory:", 4);
 
     const rows = db
@@ -28,21 +28,39 @@ describe("database module", () => {
     const names = new Set(rows.map((row) => row.name));
 
     expect(names.has("memories")).toBe(true);
-    expect(names.has("memory_vectors")).toBe(true);
+    expect(names.size).toBe(1);
 
     closeDatabase(db);
   });
 
-  it("loads sqlite-vec extension and vec_version() returns string", () => {
+  it("memories table has vector BLOB column", () => {
     const db = createDatabase(":memory:", 4);
+    const cols = db.query("PRAGMA table_info(memories)").all() as Array<{
+      name: string;
+      type: string;
+    }>;
+    const vectorCol = cols.find((c) => c.name === "vector");
+    expect(vectorCol).toBeDefined();
+    expect(vectorCol?.type.toUpperCase()).toBe("BLOB");
+    closeDatabase(db);
+  });
 
-    const row = db
-      .query("SELECT vec_version() AS version")
-      .get() as { version: string };
-
-    expect(typeof row.version).toBe("string");
-    expect(row.version.length).toBeGreaterThan(0);
-
+  it("vector BLOB roundtrip: encode Float32Array, store, retrieve, decode", () => {
+    const db = createDatabase(":memory:", 4);
+    const original = new Float32Array([0.1, 0.2, 0.3, 0.4]);
+    const blob = new Uint8Array(original.buffer.slice(0));
+    const now = Date.now();
+    db.query(
+      "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, vector, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run("vec_roundtrip", "test", "", "general", "{}", "done", blob, now, now);
+    const row = db.query("SELECT vector FROM memories WHERE id = ?").get("vec_roundtrip") as {
+      vector: Uint8Array;
+    };
+    const decoded = new Float32Array(row.vector.buffer, 0, 4);
+    expect(decoded[0]).toBeCloseTo(0.1, 5);
+    expect(decoded[1]).toBeCloseTo(0.2, 5);
+    expect(decoded[2]).toBeCloseTo(0.3, 5);
+    expect(decoded[3]).toBeCloseTo(0.4, 5);
     closeDatabase(db);
   });
 
@@ -71,34 +89,6 @@ describe("database module", () => {
     expect(inserted.id).toBe("mem_1");
     expect(inserted.content).toBe("hello memory");
     expect(inserted.embedding_status).toBe("pending");
-
-    closeDatabase(db);
-  });
-
-  it("supports vector insert and KNN MATCH query", () => {
-    const db = createDatabase(":memory:", 4);
-
-    db.query("INSERT INTO memory_vectors (id, embedding) VALUES (?, ?)").run(
-      "vec_a",
-      new Float32Array([0.1, 0.2, 0.3, 0.4])
-    );
-    db.query("INSERT INTO memory_vectors (id, embedding) VALUES (?, ?)").run(
-      "vec_b",
-      new Float32Array([0.9, 0.8, 0.7, 0.6])
-    );
-
-    const matches = db
-      .query(
-        "SELECT id, distance FROM memory_vectors WHERE embedding MATCH ? ORDER BY distance LIMIT 5"
-      )
-      .all(new Float32Array([0.1, 0.2, 0.3, 0.4])) as Array<{
-      id: string;
-      distance: number;
-    }>;
-
-    expect(matches.length).toBeGreaterThan(0);
-    expect(matches[0]?.id).toBe("vec_a");
-    expect(typeof matches[0]?.distance).toBe("number");
 
     closeDatabase(db);
   });

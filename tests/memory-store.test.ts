@@ -3,6 +3,7 @@ import type { Database } from "bun:sqlite";
 import { generateMemoryId } from "../src/config.js";
 import { createDatabase, closeDatabase } from "../src/services/database.js";
 import { createMemoryStore } from "../src/services/memory-store.js";
+import { createVectorBackend } from "../src/services/vector-backend.js";
 import type { EmbeddingService } from "../src/services/embedding.js";
 import type { PluginConfig } from "../src/types.js";
 
@@ -30,9 +31,11 @@ function makeConfig(): PluginConfig {
 
 describe("MemoryStore", () => {
   let db: Database;
+  let vectorBackend: Awaited<ReturnType<typeof createVectorBackend>>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = createDatabase(":memory:", 3);
+    vectorBackend = await createVectorBackend(db, 3);
   });
 
   afterEach(() => {
@@ -43,7 +46,8 @@ describe("MemoryStore", () => {
     const store = createMemoryStore(
       db,
       makeMockEmbedding({ error: "embed unavailable" }),
-      makeConfig()
+      makeConfig(),
+      vectorBackend
     );
 
     const added = await store.add("first memory", {
@@ -68,7 +72,8 @@ describe("MemoryStore", () => {
     const store = createMemoryStore(
       db,
       makeMockEmbedding({ embedding: new Float64Array([0.1, 0.2, 0.3]) }),
-      makeConfig()
+      makeConfig(),
+      vectorBackend
     );
 
     const added = await store.add("vector memory");
@@ -76,16 +81,18 @@ describe("MemoryStore", () => {
     expect(added.embeddingStatus).toBe("done");
 
     const vectorRow = db
-      .query("SELECT id FROM memory_vectors WHERE id = ?")
-      .get(added.id) as { id: string } | null;
-    expect(vectorRow?.id).toBe(added.id);
+      .query("SELECT vector FROM memories WHERE id = ?")
+      .get(added.id) as { vector: Uint8Array | null } | null;
+    expect(vectorRow?.vector).not.toBeNull();
+    expect(vectorRow?.vector).not.toBeUndefined();
   });
 
   it("add() with failed embedding keeps pending status", async () => {
     const store = createMemoryStore(
       db,
       makeMockEmbedding({ error: "network failed" }),
-      makeConfig()
+      makeConfig(),
+      vectorBackend
     );
 
     const added = await store.add("pending memory");
@@ -105,7 +112,7 @@ describe("MemoryStore", () => {
       embed: async () => ({ embedding }),
       embedBatch: async (texts) => texts.map(() => ({ embedding })),
     };
-    const store = createMemoryStore(db, service, makeConfig());
+    const store = createMemoryStore(db, service, makeConfig(), vectorBackend);
 
     const added = await store.add("find me by vector", { tags: "vector" });
     const results = await store.search("find query");
@@ -117,7 +124,7 @@ describe("MemoryStore", () => {
 
   it("search() falls back to text search when embed fails", async () => {
     const service = makeMockEmbedding({ error: "embedding down" });
-    const store = createMemoryStore(db, service, makeConfig());
+    const store = createMemoryStore(db, service, makeConfig(), vectorBackend);
 
     const added = await store.add("objc architecture decision", {
       tags: "ios,objc",
@@ -138,7 +145,7 @@ describe("MemoryStore", () => {
         return texts.map(() => ({ embedding: new Float64Array([0.4, 0.4, 0.4]) }));
       },
     };
-    const store = createMemoryStore(db, service, makeConfig());
+    const store = createMemoryStore(db, service, makeConfig(), vectorBackend);
 
     const pendingId = generateMemoryId();
     const now = Date.now();
@@ -172,7 +179,8 @@ describe("MemoryStore", () => {
     const store = createMemoryStore(
       db,
       makeMockEmbedding({ error: "unused" }),
-      makeConfig()
+      makeConfig(),
+      vectorBackend
     );
     const list = await store.list();
 
@@ -200,7 +208,8 @@ describe("MemoryStore", () => {
     const store = createMemoryStore(
       db,
       makeMockEmbedding({ error: "unused" }),
-      makeConfig()
+      makeConfig(),
+      vectorBackend
     );
     const list = await store.list(1, 1);
 
@@ -212,7 +221,8 @@ describe("MemoryStore", () => {
     const store = createMemoryStore(
       db,
       makeMockEmbedding({ embedding: new Float64Array([0.7, 0.1, 0.1]) }),
-      makeConfig()
+      makeConfig(),
+      vectorBackend
     );
 
     const added = await store.add("delete me");
@@ -221,18 +231,15 @@ describe("MemoryStore", () => {
     expect(removed).toBe(true);
 
     const memoryRow = db.query("SELECT id FROM memories WHERE id = ?").get(added.id);
-    const vectorRow = db
-      .query("SELECT id FROM memory_vectors WHERE id = ?")
-      .get(added.id);
     expect(memoryRow).toBeNull();
-    expect(vectorRow).toBeNull();
   });
 
   it("forget() returns false for non-existent ID", async () => {
     const store = createMemoryStore(
       db,
       makeMockEmbedding({ error: "unused" }),
-      makeConfig()
+      makeConfig(),
+      vectorBackend
     );
 
     const removed = await store.forget("mem_missing");
@@ -243,7 +250,8 @@ describe("MemoryStore", () => {
     const store = createMemoryStore(
       db,
       makeMockEmbedding({ error: "unused" }),
-      makeConfig()
+      makeConfig(),
+      vectorBackend
     );
     const now = Date.now();
     db.query(
@@ -259,7 +267,8 @@ describe("MemoryStore", () => {
     const store = createMemoryStore(
       db,
       makeMockEmbedding({ error: "unused" }),
-      makeConfig()
+      makeConfig(),
+      vectorBackend
     );
 
     const memory = await store.get("mem_none");
@@ -281,7 +290,7 @@ describe("MemoryStore", () => {
       embedBatch: async (texts) =>
         texts.map(() => ({ embedding: new Float64Array([0.1, 0.2, 0.3]) })),
     };
-    const store = createMemoryStore(db, service, makeConfig());
+    const store = createMemoryStore(db, service, makeConfig(), vectorBackend);
 
     const count = await store.retryPendingEmbeddings();
 
@@ -304,7 +313,7 @@ describe("MemoryStore", () => {
       embed: async (_text) => ({ error: "unused" }),
       embedBatch: async (texts) => texts.map(() => ({ error: "embed fail" })),
     };
-    const store = createMemoryStore(db, service, makeConfig());
+    const store = createMemoryStore(db, service, makeConfig(), vectorBackend);
 
     const count = await store.retryPendingEmbeddings();
     expect(count).toBe(0);

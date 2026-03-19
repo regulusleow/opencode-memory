@@ -5,6 +5,7 @@ import { getConfig, getProjectStoragePath } from "./config.js";
 import { createDatabase } from "./services/database.js";
 import { createEmbeddingService } from "./services/embedding.js";
 import { createMemoryStore } from "./services/memory-store.js";
+import { createVectorBackend } from "./services/vector-backend.js";
 import { createMemoryTool } from "./services/tool.js";
 import { createChatMessageHook } from "./services/hooks.js";
 
@@ -19,7 +20,8 @@ export const plugin: Plugin = async (ctx: PluginInput) => {
 
     const db = createDatabase(dbPath, config.embeddingDimensions);
     const embeddingService = createEmbeddingService(config);
-    const store = createMemoryStore(db, embeddingService, config);
+    const vectorBackend = await createVectorBackend(db, config.embeddingDimensions);
+    const store = createMemoryStore(db, embeddingService, config, vectorBackend);
     const memoryTool = createMemoryTool(store, config);
     const chatHook = createChatMessageHook(store, config);
 
