@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { closeDatabase, createDatabase } from "../src/services/database";
+import {
+  closeDatabase,
+  createDatabase,
+  getEmbeddingMeta,
+  setEmbeddingMeta,
+} from "../src/services/database";
 
 const tempDirs: string[] = [];
 
@@ -19,7 +24,7 @@ describe("database module", () => {
     closeDatabase(db);
   });
 
-  it("creates memories table without any virtual table", () => {
+  it("creates memories and embedding_meta tables without any virtual table", () => {
     const db = createDatabase(":memory:", 4);
 
     const rows = db
@@ -28,7 +33,8 @@ describe("database module", () => {
     const names = new Set(rows.map((row) => row.name));
 
     expect(names.has("memories")).toBe(true);
-    expect(names.size).toBe(1);
+    expect(names.has("embedding_meta")).toBe(true);
+    expect(names.size).toBe(2);
 
     closeDatabase(db);
   });
@@ -111,5 +117,43 @@ describe("database module", () => {
       const db2 = createDatabase(dbPath, 4);
       closeDatabase(db2);
     }).not.toThrow();
+  });
+
+  it("getEmbeddingMeta() returns nulls when table is empty", () => {
+    const db = createDatabase(":memory:", 4);
+
+    expect(getEmbeddingMeta(db)).toEqual({ modelName: null, dimensions: null });
+
+    closeDatabase(db);
+  });
+
+  it("setEmbeddingMeta() writes model and dimensions", () => {
+    const db = createDatabase(":memory:", 4);
+
+    setEmbeddingMeta(db, "text-embedding-3-small", 1536);
+
+    const rows = db
+      .query("SELECT key, value FROM embedding_meta ORDER BY key")
+      .all() as Array<{ key: string; value: string }>;
+
+    expect(rows).toEqual([
+      { key: "dimensions", value: "1536" },
+      { key: "model_name", value: "text-embedding-3-small" },
+    ]);
+
+    closeDatabase(db);
+  });
+
+  it("getEmbeddingMeta() reads values written by setEmbeddingMeta()", () => {
+    const db = createDatabase(":memory:", 4);
+
+    setEmbeddingMeta(db, "nomic-embed-text-v1.5", 768);
+
+    expect(getEmbeddingMeta(db)).toEqual({
+      modelName: "nomic-embed-text-v1.5",
+      dimensions: 768,
+    });
+
+    closeDatabase(db);
   });
 });
