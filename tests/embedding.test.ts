@@ -303,6 +303,12 @@ describe("EmbeddingService", () => {
     expect(results.length).toBe(2);
     expect("embedding" in results[0]).toBe(true);
     expect("embedding" in results[1]).toBe(true);
+    if ("embedding" in results[0]) {
+      expect(results[0].embedding instanceof Float64Array).toBe(true);
+    }
+    if ("embedding" in results[1]) {
+      expect(results[1].embedding instanceof Float64Array).toBe(true);
+    }
   });
 
   it("embedBatch() ignores purpose for API backend", async () => {
