@@ -1,15 +1,13 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "node",
-    "strict": false,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
     "outDir": "dist",
     "rootDir": "src",
     "skipLibCheck": true,
-    "noEmit": true,
-    "lib": ["ES2022"],
-    "noImplicitAny": false
+    "types": ["bun-types"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
