@@ -61,7 +61,7 @@ export function createMemoryStore(
           "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         ).run(id, content, tags, type, metadata, "pending", now, now);
 
-        const embeddingResult = await embeddingService.embed(content);
+        const embeddingResult = await embeddingService.embed(content, "document");
 
         if ("embedding" in embeddingResult) {
           const vector = new Float32Array(embeddingResult.embedding);
@@ -112,7 +112,7 @@ export function createMemoryStore(
       void this.retryPendingEmbeddings(5).catch(() => undefined);
 
       try {
-        const queryEmbedding = await embeddingService.embed(query);
+        const queryEmbedding = await embeddingService.embed(query, "query");
 
         const vectorResults: MemorySearchResult[] = [];
         if ("embedding" in queryEmbedding) {
@@ -250,7 +250,8 @@ export function createMemoryStore(
         }
 
         const results = await embeddingService.embedBatch(
-          pendingRows.map((row) => row.content)
+          pendingRows.map((row) => row.content),
+          "document"
         );
 
         const updatedAt = Date.now();

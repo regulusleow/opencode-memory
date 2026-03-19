@@ -4,13 +4,14 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "bun build src/index.ts --outdir dist --target bun --external @huggingface/transformers --external onnxruntime-node",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@opencode-ai/plugin": "latest",
     "@opencode-ai/sdk": "latest",
+    "@huggingface/transformers": "^3.4.0",
     "usearch": "^2.21.4"
   },
   "devDependencies": {
