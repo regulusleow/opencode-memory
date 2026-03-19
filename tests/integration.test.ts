@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getProjectStoragePath } from "../src/config.js";
+import { getConfig, getProjectStoragePath } from "../src/config.js";
 import { plugin } from "../src/plugin.js";
 import { createDatabase, closeDatabase } from "../src/services/database.js";
 import { createEmbeddingService } from "../src/services/embedding.js";
@@ -12,14 +12,6 @@ import { createMemoryTool } from "../src/services/tool.js";
 import type { PluginConfig } from "../src/types.js";
 
 const tempDirs: string[] = [];
-
-const envKeys = [
-  "OPENCODE_MEMORY_STORAGE_PATH",
-  "OPENCODE_MEMORY_EMBEDDING_API_KEY",
-  "OPENCODE_MEMORY_EMBEDDING_DIMENSIONS",
-] as const;
-
-const savedEnv: Record<string, string | undefined> = {};
 
 function makeTempDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -35,24 +27,9 @@ function makePluginInput(directory: string): any {
 }
 
 describe("plugin integration", () => {
-  beforeEach(() => {
-    for (const key of envKeys) {
-      savedEnv[key] = process.env[key];
-      delete process.env[key];
-    }
-    process.env.OPENCODE_MEMORY_EMBEDDING_API_KEY = "";
-  });
+  beforeEach(() => {});
 
   afterEach(() => {
-    for (const key of envKeys) {
-      const value = savedEnv[key];
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    }
-
     for (const dir of tempDirs.splice(0)) {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -60,8 +37,6 @@ describe("plugin integration", () => {
 
   it("plugin() returns chat.message hook and tool.memory", async () => {
     const projectDir = makeTempDir("opencode-memory-int-project-");
-    const storageRoot = makeTempDir("opencode-memory-int-storage-");
-    process.env.OPENCODE_MEMORY_STORAGE_PATH = storageRoot;
 
     const hooks = await plugin(makePluginInput(projectDir));
 
@@ -73,26 +48,28 @@ describe("plugin integration", () => {
 
   it("plugin() initializes successfully with temp directory and creates db file", async () => {
     const projectDir = makeTempDir("opencode-memory-int-project-");
-    const storageRoot = makeTempDir("opencode-memory-int-storage-");
-    process.env.OPENCODE_MEMORY_STORAGE_PATH = storageRoot;
 
     const hooks = await plugin(makePluginInput(projectDir));
-    const dbPath = getProjectStoragePath(storageRoot, projectDir);
+    const dbPath = getProjectStoragePath(getConfig(projectDir).storagePath, projectDir);
 
     expect(hooks).toBeDefined();
     expect(existsSync(dbPath)).toBe(true);
   });
 
   it("assembled components support add -> search -> list -> forget lifecycle", async () => {
-    const config: PluginConfig = {
-      embeddingApiUrl: "https://api.openai.com/v1/embeddings",
-      embeddingApiKey: "",
-      embeddingModel: "text-embedding-3-small",
-      embeddingDimensions: 4,
-      storagePath: "/tmp/opencode-memory-test",
-      searchLimit: 5,
-      contextLimit: 3,
-    };
+      const config: PluginConfig = {
+        embeddingApiUrl: "https://api.openai.com/v1/embeddings",
+        embeddingApiKey: "",
+        embeddingModel: "text-embedding-3-small",
+        embeddingDimensions: 4,
+        storagePath: "/tmp/opencode-memory-test",
+        searchLimit: 5,
+        contextLimit: 3,
+        embeddingBackend: "auto",
+        localModel: "nomic-ai/nomic-embed-text-v1.5",
+        localDtype: "q8",
+        localCacheDir: "/tmp/opencode-memory-test/models",
+      };
 
     const db = createDatabase(":memory:", config.embeddingDimensions);
 
@@ -146,16 +123,13 @@ describe("plugin integration", () => {
 
   it("chat.message hook is a function", async () => {
     const projectDir = makeTempDir("opencode-memory-int-project-");
-    const storageRoot = makeTempDir("opencode-memory-int-storage-");
-    process.env.OPENCODE_MEMORY_STORAGE_PATH = storageRoot;
 
     const hooks = await plugin(makePluginInput(projectDir));
     expect(typeof hooks["chat.message"]).toBe("function");
   });
 
   it("plugin() handles initialization error gracefully", async () => {
-    const projectDir = makeTempDir("opencode-memory-int-project-");
-    process.env.OPENCODE_MEMORY_STORAGE_PATH = "\u0000invalid-path";
+    const projectDir = undefined as unknown as string;
 
     const hooks = await plugin(makePluginInput(projectDir));
 

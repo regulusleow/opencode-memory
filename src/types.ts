@@ -24,4 +24,8 @@ export interface PluginConfig {
   storagePath: string;
   searchLimit: number;
   contextLimit: number;
+  embeddingBackend: "auto" | "api" | "local";
+  localModel: string;
+  localDtype: string;
+  localCacheDir: string;
 }
