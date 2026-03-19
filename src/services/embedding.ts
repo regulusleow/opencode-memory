@@ -1,11 +1,16 @@
 import type { PluginConfig } from "../types.js";
 
 export interface EmbeddingService {
-  embed(text: string): Promise<{ embedding: Float64Array } | { error: string }>;
+  embed(
+    text: string,
+    purpose?: "document" | "query"
+  ): Promise<{ embedding: Float64Array } | { error: string }>;
   embedBatch(
-    texts: string[]
+    texts: string[],
+    purpose?: "document" | "query"
   ): Promise<Array<{ embedding: Float64Array } | { error: string }>>;
   isConfigured(): boolean;
+  warmup?(): Promise<void>;
 }
 
 interface OpenAIEmbeddingResponse {
@@ -24,13 +29,15 @@ interface OpenAIEmbeddingResponse {
 
 const TIMEOUT_MS = 10000;
 
-export function createEmbeddingService(config: PluginConfig): EmbeddingService {
+export function createApiEmbeddingBackend(
+  config: PluginConfig
+): EmbeddingService {
   return {
     isConfigured(): boolean {
       return config.embeddingApiKey !== "";
     },
 
-    async embed(text: string) {
+    async embed(text: string, _purpose?: "document" | "query") {
       if (!this.isConfigured()) {
         return { error: "Embedding API not configured" };
       }
@@ -74,7 +81,7 @@ export function createEmbeddingService(config: PluginConfig): EmbeddingService {
       }
     },
 
-    async embedBatch(texts: string[]) {
+    async embedBatch(texts: string[], _purpose?: "document" | "query") {
       if (!this.isConfigured()) {
         return texts.map(() => ({ error: "Embedding API not configured" }));
       }
@@ -123,3 +130,5 @@ export function createEmbeddingService(config: PluginConfig): EmbeddingService {
     },
   };
 }
+
+export const createEmbeddingService = createApiEmbeddingBackend;
