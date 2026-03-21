@@ -8,6 +8,8 @@ import { createApiEmbeddingBackend } from "../src/services/embedding.js";
 import { createMemoryStore } from "../src/services/memory-store.js";
 import { createVectorBackend } from "../src/services/vector-backend.js";
 import { createMemoryTool } from "../src/services/tool.js";
+import { createPrivacyFilter } from "../src/services/privacy.js";
+import { createDedupService } from "../src/services/dedup.js";
 import type { PluginConfig } from "../src/types.js";
 import type { EmbeddingService } from "../src/services/embedding.js";
 
@@ -22,7 +24,7 @@ function makeTempDir(prefix: string): string {
 function makePluginInput(directory: string): any {
   return {
     directory,
-    client: {},
+    client: { app: { log: () => Promise.resolve() } },
   };
 }
 
@@ -39,6 +41,11 @@ function makeConfig(overrides: Partial<PluginConfig> = {}): PluginConfig {
     localModel: "nomic-ai/nomic-embed-text-v1.5",
     localDtype: "q8",
     localCacheDir: "/tmp/opencode-memory-test/models",
+    privacyPatterns: [],
+    dedupSimilarityThreshold: 0.7,
+    autoCaptureEnabled: true,
+    autoCaptureDelay: 10000,
+    autoCaptureMinImportance: 6,
     ...overrides,
   };
 }
@@ -543,6 +550,175 @@ describe("dimension migration", () => {
         modelName: "text-embedding-3-small",
         dimensions: 1536,
       });
+    } finally {
+      closeDatabase(db);
+    }
+  });
+});
+
+describe("memory store privacy and dedup integration", () => {
+  it("applies privacy filter before storing content", async () => {
+    const config = makeConfig();
+    const db = createDatabase(":memory:", config.embeddingDimensions);
+
+    try {
+      const embeddingService = makeEmbeddingService();
+      const vectorBackend = await createVectorBackend(db, config.embeddingDimensions);
+      const privacyFilter = createPrivacyFilter([]);
+      const dedupService = createDedupService(db, vectorBackend, config);
+      const store = createMemoryStore(
+        db,
+        embeddingService,
+        config,
+        vectorBackend,
+        privacyFilter,
+        dedupService
+      );
+
+      const memory = await store.add("<private>secret</private> visible");
+      expect(memory.content).toBe("[REDACTED] visible");
+    } finally {
+      closeDatabase(db);
+    }
+  });
+
+  it("deduplicates exact content and returns existing memory", async () => {
+    const config = makeConfig();
+    const db = createDatabase(":memory:", config.embeddingDimensions);
+
+    try {
+      const embeddingService = makeEmbeddingService();
+      const vectorBackend = await createVectorBackend(db, config.embeddingDimensions);
+      const privacyFilter = createPrivacyFilter([]);
+      const dedupService = createDedupService(db, vectorBackend, config);
+      const store = createMemoryStore(
+        db,
+        embeddingService,
+        config,
+        vectorBackend,
+        privacyFilter,
+        dedupService
+      );
+
+      const first = await store.add("same content");
+      const second = await store.add("same content");
+
+      const countRow = db.query("SELECT COUNT(*) as count FROM memories").get() as { count: number };
+      expect(second.id).toBe(first.id);
+      expect(countRow.count).toBe(1);
+    } finally {
+      closeDatabase(db);
+    }
+  });
+
+  it("deduplicates after privacy filtering", async () => {
+    const config = makeConfig();
+    const db = createDatabase(":memory:", config.embeddingDimensions);
+
+    try {
+      const embeddingService = makeEmbeddingService();
+      const vectorBackend = await createVectorBackend(db, config.embeddingDimensions);
+      const privacyFilter = createPrivacyFilter([]);
+      const dedupService = createDedupService(db, vectorBackend, config);
+      const store = createMemoryStore(
+        db,
+        embeddingService,
+        config,
+        vectorBackend,
+        privacyFilter,
+        dedupService
+      );
+
+      const first = await store.add("<private>key</private> auth");
+      const second = await store.add("<private>key</private> auth");
+
+      expect(first.id).toBe(second.id);
+      expect(second.content).toBe("[REDACTED] auth");
+    } finally {
+      closeDatabase(db);
+    }
+  });
+
+  it("boosts rank when query word appears in tags", async () => {
+    const config = makeConfig();
+    const db = createDatabase(":memory:", config.embeddingDimensions);
+
+    try {
+      const embeddingService: EmbeddingService = {
+        isConfigured: () => true,
+        embed: async (_text, purpose) => {
+          if (purpose === "query") {
+            return { error: "skip semantic for rank test" };
+          }
+          return { embedding: new Float64Array([0.1, 0.2, 0.3, 0.4]) };
+        },
+        embedBatch: async (texts) =>
+          texts.map(() => ({ embedding: new Float64Array([0.1, 0.2, 0.3, 0.4]) })),
+      };
+      const vectorBackend = await createVectorBackend(db, config.embeddingDimensions);
+      const store = createMemoryStore(db, embeddingService, config, vectorBackend);
+
+      const noTag = await store.add("objc memory");
+      const withTag = await store.add("objc memory", { tags: "objc,ios" });
+      const results = await store.search("objc", 5);
+
+      expect(results[0]?.id).toBe(withTag.id);
+      expect(results.some((m) => m.id === noTag.id)).toBe(true);
+    } finally {
+      closeDatabase(db);
+    }
+  });
+
+  it("prefers newer memory when relevance is otherwise equal", async () => {
+    const config = makeConfig();
+    const db = createDatabase(":memory:", config.embeddingDimensions);
+
+    try {
+      const embeddingService: EmbeddingService = {
+        isConfigured: () => true,
+        embed: async (_text, purpose) => {
+          if (purpose === "query") {
+            return { error: "skip semantic for recency test" };
+          }
+          return { embedding: new Float64Array([0.1, 0.2, 0.3, 0.4]) };
+        },
+        embedBatch: async (texts) =>
+          texts.map(() => ({ embedding: new Float64Array([0.1, 0.2, 0.3, 0.4]) })),
+      };
+      const vectorBackend = await createVectorBackend(db, config.embeddingDimensions);
+      const store = createMemoryStore(db, embeddingService, config, vectorBackend);
+
+      const oldMemory = await store.add("same query token");
+      const newMemory = await store.add("same query token");
+
+      const fortyDays = 40 * 86400000;
+      db.query("UPDATE memories SET created_at = ?, updated_at = ? WHERE id = ?").run(
+        Date.now() - fortyDays,
+        Date.now() - fortyDays,
+        oldMemory.id
+      );
+
+      const results = await store.search("query", 5);
+      expect(results[0]?.id).toBe(newMemory.id);
+    } finally {
+      closeDatabase(db);
+    }
+  });
+
+  it("works with createMemoryStore defaults when optional services are omitted", async () => {
+    const config = makeConfig();
+    const db = createDatabase(":memory:", config.embeddingDimensions);
+
+    try {
+      const embeddingService = makeEmbeddingService();
+      const vectorBackend = await createVectorBackend(db, config.embeddingDimensions);
+      const store = createMemoryStore(db, embeddingService, config, vectorBackend);
+
+      const saved = await store.add("default services path");
+      const found = await store.search("default", 5);
+
+      expect(saved.id.startsWith("mem_")).toBe(true);
+      expect(found.some((item) => item.id === saved.id)).toBe(true);
     } finally {
       closeDatabase(db);
     }
