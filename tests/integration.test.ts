@@ -46,6 +46,7 @@ function makeConfig(overrides: Partial<PluginConfig> = {}): PluginConfig {
     autoCaptureEnabled: true,
     autoCaptureDelay: 10000,
     autoCaptureMinImportance: 6,
+    searchLayersEnabled: true,
     ...overrides,
   };
 }
