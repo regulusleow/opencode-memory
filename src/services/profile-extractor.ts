@@ -14,7 +14,7 @@ interface SessionMessage {
   parts?: SessionMessagePart[];
 }
 
-interface ProfileClient {
+export interface ProfileClient {
   session: {
     messages: (args: { path: { id: string } }) => Promise<SessionMessage[]>;
     prompt: (

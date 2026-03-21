@@ -53,7 +53,7 @@ export function createChatMessageHook(
               type: "text",
               text: profileText,
               synthetic: true,
-            } as any);
+            });
           }
         }
       }
