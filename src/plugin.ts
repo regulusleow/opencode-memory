@@ -15,6 +15,10 @@ import { createPrivacyFilter } from "./services/privacy.js";
 import { createDedupService } from "./services/dedup.js";
 import { createEventHandler } from "./services/event-handler.js";
 import { createAutoCapture } from "./services/auto-capture.js";
+import { createProfileStore } from "./services/profile-store.js";
+import { createProfileExtractor } from "./services/profile-extractor.js";
+import { createWebServer } from "./services/web-server.js";
+import { getIndexHtml } from "./services/web-ui.js";
 
 export const plugin: Plugin = async (ctx: PluginInput) => {
   const { directory } = ctx;
@@ -61,10 +65,23 @@ export const plugin: Plugin = async (ctx: PluginInput) => {
     const privacyFilter = createPrivacyFilter(config.privacyPatterns);
     const dedupService = createDedupService(db, vectorBackend, { dedupSimilarityThreshold: config.dedupSimilarityThreshold });
     const store = createMemoryStore(db, embeddingService, config, vectorBackend, privacyFilter, dedupService, logger);
-    const memoryTool = createMemoryTool(store, config);
-    const chatHook = createChatMessageHook(store, config);
+
+    const profileStore = createProfileStore(db);
+    const profileExtractor = createProfileExtractor({ client: ctx.client as any, profileStore, config, logger });
+    const webServer = createWebServer({ store, profileStore, config, logger, getHtml: () => getIndexHtml(config.webServerPort) });
+
+    const onWebStart = (): string => {
+      if (webServer.isRunning()) {
+        return `http://127.0.0.1:${config.webServerPort}`;
+      }
+      const result = webServer.start();
+      return result.url;
+    };
+
+    const memoryTool = createMemoryTool(store, config, { profileStore, profileExtractor, onWebStart });
+    const chatHook = createChatMessageHook(store, config, profileStore);
     const autoCapture = createAutoCapture({ client: ctx.client as any, store, config, logger });
-    const eventHandler = createEventHandler({ needsReinjection, onIdle: autoCapture, config, logger });
+    const eventHandler = createEventHandler({ needsReinjection, onIdle: autoCapture, onIdleProfile: profileExtractor.extract, config, logger });
 
     return {
       "chat.message": chatHook,
