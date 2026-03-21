@@ -80,6 +80,42 @@ describe("config module", () => {
       expect(getEmbeddingDimensions("text-embedding-ada-002")).toBe(1536);
       expect(getEmbeddingDimensions("unknown-model")).toBe(768);
     });
+
+    it("maps Xenova/all-MiniLM-L6-v2 to 384", () => {
+      expect(getEmbeddingDimensions("Xenova/all-MiniLM-L6-v2")).toBe(384);
+    });
+
+    it("maps sentence-transformers/all-MiniLM-L6-v2 to 384", () => {
+      expect(getEmbeddingDimensions("sentence-transformers/all-MiniLM-L6-v2")).toBe(384);
+    });
+
+    it("maps BAAI/bge-small-en-v1.5 to 384", () => {
+      expect(getEmbeddingDimensions("BAAI/bge-small-en-v1.5")).toBe(384);
+    });
+
+    it("maps Xenova/bge-small-en-v1.5 to 384", () => {
+      expect(getEmbeddingDimensions("Xenova/bge-small-en-v1.5")).toBe(384);
+    });
+
+    it("maps BAAI/bge-base-en-v1.5 to 768", () => {
+      expect(getEmbeddingDimensions("BAAI/bge-base-en-v1.5")).toBe(768);
+    });
+
+    it("maps BAAI/bge-large-en-v1.5 to 1024", () => {
+      expect(getEmbeddingDimensions("BAAI/bge-large-en-v1.5")).toBe(1024);
+    });
+
+    it("maps nomic-ai/nomic-embed-text-v1 to 768", () => {
+      expect(getEmbeddingDimensions("nomic-ai/nomic-embed-text-v1")).toBe(768);
+    });
+
+    it("maps Xenova/all-MiniLM-L12-v2 to 384", () => {
+      expect(getEmbeddingDimensions("Xenova/all-MiniLM-L12-v2")).toBe(384);
+    });
+
+    it("still falls back to 768 for unknown models", () => {
+      expect(getEmbeddingDimensions("unknown-model-xyz")).toBe(768);
+    });
   });
 
   describe("getConfig", () => {

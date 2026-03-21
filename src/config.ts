@@ -117,6 +117,14 @@ export function getEmbeddingDimensions(model: string): number {
     "text-embedding-3-small": 1536,
     "text-embedding-3-large": 3072,
     "text-embedding-ada-002": 1536,
+    "Xenova/all-MiniLM-L6-v2": 384,
+    "sentence-transformers/all-MiniLM-L6-v2": 384,
+    "BAAI/bge-small-en-v1.5": 384,
+    "Xenova/bge-small-en-v1.5": 384,
+    "BAAI/bge-base-en-v1.5": 768,
+    "BAAI/bge-large-en-v1.5": 1024,
+    "nomic-ai/nomic-embed-text-v1": 768,
+    "Xenova/all-MiniLM-L12-v2": 384,
   };
 
   return dimensionMap[model] ?? 768;
