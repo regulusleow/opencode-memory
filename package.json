@@ -20,6 +20,6 @@
   },
   "opencode": {
     "type": "plugin",
-    "hooks": ["chat.message"]
+    "hooks": ["chat.message", "event"]
   }
 }
