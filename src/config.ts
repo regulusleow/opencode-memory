@@ -23,6 +23,7 @@ interface RawPluginConfig {
   autoCaptureEnabled?: unknown;
   autoCaptureDelay?: unknown;
   autoCaptureMinImportance?: unknown;
+  searchLayersEnabled?: unknown;
 }
 
 function getConfigFilePath(): string {
@@ -151,6 +152,7 @@ function getDefaultConfig(): PluginConfig {
     autoCaptureEnabled: true,
     autoCaptureDelay: 10000,
     autoCaptureMinImportance: 6,
+    searchLayersEnabled: true,
   };
 }
 
@@ -226,6 +228,10 @@ export function getConfig(projectPath: string): PluginConfig {
       typeof raw.autoCaptureMinImportance === "number"
         ? raw.autoCaptureMinImportance
         : defaults.autoCaptureMinImportance,
+    searchLayersEnabled:
+      typeof raw.searchLayersEnabled === "boolean"
+        ? raw.searchLayersEnabled
+        : defaults.searchLayersEnabled,
   };
 }
 

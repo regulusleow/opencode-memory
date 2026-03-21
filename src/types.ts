@@ -33,4 +33,5 @@ export interface PluginConfig {
   autoCaptureEnabled: boolean;
   autoCaptureDelay: number;
   autoCaptureMinImportance: number;
+  searchLayersEnabled: boolean;
 }

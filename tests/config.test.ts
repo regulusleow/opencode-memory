@@ -371,4 +371,52 @@ describe("config module", () => {
       expect(config.autoCaptureMinImportance).toBe(6);
     });
   });
+
+  describe("searchLayersEnabled config", () => {
+    it("should return searchLayersEnabled as true by default", () => {
+      const config = getConfig("/test/project");
+
+      expect(config.searchLayersEnabled).toBe(true);
+    });
+
+    it("should override searchLayersEnabled from config file when true", () => {
+      writeConfigFile(`{
+  "searchLayersEnabled": true
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.searchLayersEnabled).toBe(true);
+    });
+
+    it("should override searchLayersEnabled from config file when false", () => {
+      writeConfigFile(`{
+  "searchLayersEnabled": false
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.searchLayersEnabled).toBe(false);
+    });
+
+    it("should fall back to default when searchLayersEnabled is not a boolean", () => {
+      writeConfigFile(`{
+  "searchLayersEnabled": "true"
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.searchLayersEnabled).toBe(true);
+    });
+
+    it("should fall back to default when searchLayersEnabled is a number", () => {
+      writeConfigFile(`{
+  "searchLayersEnabled": 1
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.searchLayersEnabled).toBe(true);
+    });
+  });
 });
