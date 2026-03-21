@@ -26,6 +26,38 @@ export function createDatabase(dbPath: string, _dimensions: number): Database {
     );
   `);
 
+  db.run(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+      content,
+      tokenize='trigram',
+      content='memories',
+      content_rowid='rowid'
+    )
+  `);
+
+  db.run(`
+    CREATE TRIGGER IF NOT EXISTS memories_fts_ai AFTER INSERT ON memories BEGIN
+      INSERT INTO memories_fts(rowid, content) VALUES (new.rowid, new.content);
+    END
+  `);
+
+  db.run(`
+    CREATE TRIGGER IF NOT EXISTS memories_fts_ad AFTER DELETE ON memories BEGIN
+      INSERT INTO memories_fts(memories_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+    END
+  `);
+
+  db.run(`
+    CREATE TRIGGER IF NOT EXISTS memories_fts_au AFTER UPDATE ON memories BEGIN
+      INSERT INTO memories_fts(memories_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+      INSERT INTO memories_fts(rowid, content) VALUES (new.rowid, new.content);
+    END
+  `);
+
+  db.run(`
+    INSERT INTO memories_fts(memories_fts) SELECT 'rebuild' WHERE NOT EXISTS (SELECT 1 FROM memories_fts LIMIT 1)
+  `);
+
   return db;
 }
 
