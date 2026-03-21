@@ -2,6 +2,10 @@ import type { MemoryStore } from "./memory-store.js";
 import type { PluginConfig } from "../types.js";
 import { formatMemoryContext } from "./context.js";
 
+// Module-level sets for per-session tracking
+export const injectedSessions = new Set<string>();
+export const needsReinjection = new Set<string>();
+
 export function createChatMessageHook(
   store: MemoryStore,
   config: PluginConfig
@@ -9,11 +13,9 @@ export function createChatMessageHook(
   input: { sessionID: string },
   output: { message: { id: string }; parts: any[] }
 ) => Promise<void> {
-  let injected = false;
-
   return async (input, output) => {
-    if (injected) return;
-    injected = true;
+    if (injectedSessions.has(input.sessionID) && !needsReinjection.has(input.sessionID)) return;
+    injectedSessions.add(input.sessionID);
 
     try {
       let query = "";
@@ -39,6 +41,8 @@ export function createChatMessageHook(
       output.parts.unshift(contextPart);
     } catch {
       // swallow errors silently
+    } finally {
+      needsReinjection.delete(input.sessionID);
     }
   };
 }
