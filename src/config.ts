@@ -28,6 +28,7 @@ interface RawPluginConfig {
   profileExtractionMinPrompts?: unknown;
   profileMaxMessagesPerExtraction?: unknown;
   webServerPort?: unknown;
+  logLevel?: unknown;
 }
 
 function getConfigFilePath(): string {
@@ -169,6 +170,7 @@ function getDefaultConfig(): PluginConfig {
     profileExtractionMinPrompts: 5,
     profileMaxMessagesPerExtraction: 20,
     webServerPort: 18080,
+    logLevel: "info" as const,
   };
 }
 
@@ -199,6 +201,11 @@ export function getConfig(projectPath: string): PluginConfig {
     raw.embeddingBackend === "local"
       ? raw.embeddingBackend
       : defaults.embeddingBackend;
+
+  const validLogLevels = ["debug", "info", "warn", "error", "silent"] as const;
+  const logLevel = validLogLevels.includes(raw.logLevel as (typeof validLogLevels)[number])
+    ? (raw.logLevel as (typeof validLogLevels)[number])
+    : defaults.logLevel;
 
   return {
     embeddingApiUrl:
@@ -264,6 +271,7 @@ export function getConfig(projectPath: string): PluginConfig {
       typeof raw.webServerPort === "number"
         ? raw.webServerPort
         : defaults.webServerPort,
+    logLevel,
   };
 }
 

@@ -22,10 +22,11 @@ import { getIndexHtml } from "./services/web-ui.js";
 
 export const plugin: Plugin = async (ctx: PluginInput) => {
   const { directory } = ctx;
-  const logger = createLogger(ctx.client);
+  let logger = createLogger(ctx.client);
 
   try {
     const config = getConfig(directory);
+    logger = createLogger(ctx.client, { logLevel: config.logLevel });
     const dbPath = getProjectStoragePath(config.storagePath, directory);
 
     mkdirSync(dirname(dbPath), { recursive: true });

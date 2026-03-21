@@ -38,6 +38,7 @@ export interface PluginConfig {
   profileExtractionMinPrompts: number;
   profileMaxMessagesPerExtraction: number;
   webServerPort: number;
+  logLevel: "debug" | "info" | "warn" | "error" | "silent";
 }
 
 export interface ProfilePreference {

@@ -493,4 +493,27 @@ describe("config module", () => {
       expect(config.webServerPort).toBe(8888);
     });
   });
+
+  describe("logLevel config", () => {
+    it("default config has logLevel 'info'", () => {
+      const config = getConfig("/test/project");
+      expect(config.logLevel).toBe("info");
+    });
+
+    it("config with valid logLevel 'warn' is accepted", () => {
+      writeConfigFile(`{
+  "logLevel": "warn"
+}`);
+      const config = getConfig("/test/project");
+      expect(config.logLevel).toBe("warn");
+    });
+
+    it("config with invalid logLevel falls back to 'info'", () => {
+      writeConfigFile(`{
+  "logLevel": "invalid"
+}`);
+      const config = getConfig("/test/project");
+      expect(config.logLevel).toBe("info");
+    });
+  });
 });

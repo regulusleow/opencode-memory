@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, it, expect, mock, spyOn, afterEach } from "bun:test";
 import { createLogger } from "../src/services/logger.js";
 
 describe("createLogger", () => {
@@ -131,5 +131,132 @@ describe("createLogger", () => {
     expect(() => {
       logger.debug("message", { extra: "data" });
     }).not.toThrow();
+  });
+});
+
+describe("logger level filtering", () => {
+  function makeMockClient() {
+    return {
+      app: {
+        log: mock(async () => undefined),
+      },
+    };
+  }
+
+  it("logLevel 'warn' filters out debug calls", () => {
+    const client = makeMockClient();
+    const logger = createLogger(client, { logLevel: "warn" });
+    logger.debug("msg");
+    expect(client.app.log).not.toHaveBeenCalled();
+  });
+
+  it("logLevel 'warn' filters out info calls", () => {
+    const client = makeMockClient();
+    const logger = createLogger(client, { logLevel: "warn" });
+    logger.info("msg");
+    expect(client.app.log).not.toHaveBeenCalled();
+  });
+
+  it("logLevel 'warn' passes warn calls through", () => {
+    const client = makeMockClient();
+    const logger = createLogger(client, { logLevel: "warn" });
+    logger.warn("msg");
+    expect(client.app.log).toHaveBeenCalledTimes(1);
+  });
+
+  it("logLevel 'warn' passes error calls through", () => {
+    const client = makeMockClient();
+    const logger = createLogger(client, { logLevel: "warn" });
+    logger.error("msg");
+    expect(client.app.log).toHaveBeenCalledTimes(1);
+  });
+
+  it("default logLevel (no options) passes debug through for backward compat", () => {
+    const client = makeMockClient();
+    const logger = createLogger(client);
+    logger.debug("msg");
+    expect(client.app.log).toHaveBeenCalledTimes(1);
+  });
+
+  it("explicit logLevel 'info' filters out debug but passes info", () => {
+    const client = makeMockClient();
+    const logger = createLogger(client, { logLevel: "info" });
+    logger.debug("msg");
+    expect(client.app.log).not.toHaveBeenCalled();
+    logger.info("msg");
+    expect(client.app.log).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("logger console fallback", () => {
+  let debugSpy: ReturnType<typeof spyOn>;
+  let infoSpy: ReturnType<typeof spyOn>;
+  let warnSpy: ReturnType<typeof spyOn>;
+  let errorSpy: ReturnType<typeof spyOn>;
+
+  afterEach(() => {
+    debugSpy?.mockRestore();
+    infoSpy?.mockRestore();
+    warnSpy?.mockRestore();
+    errorSpy?.mockRestore();
+  });
+
+  it("falls back to console.debug when client is null", () => {
+    debugSpy = spyOn(console, "debug").mockImplementation(() => {});
+    const logger = createLogger(null, { logLevel: "debug" });
+    logger.debug("msg");
+    expect(debugSpy).toHaveBeenCalledWith("[opencode-memory]", "msg");
+  });
+
+  it("falls back to console.info when client is null", () => {
+    infoSpy = spyOn(console, "info").mockImplementation(() => {});
+    const logger = createLogger(null, { logLevel: "debug" });
+    logger.info("msg");
+    expect(infoSpy).toHaveBeenCalledWith("[opencode-memory]", "msg");
+  });
+
+  it("falls back to console.warn when client is null", () => {
+    warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    const logger = createLogger(null, { logLevel: "debug" });
+    logger.warn("msg");
+    expect(warnSpy).toHaveBeenCalledWith("[opencode-memory]", "msg");
+  });
+
+  it("falls back to console.error when client is null", () => {
+    errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    const logger = createLogger(null, { logLevel: "debug" });
+    logger.error("msg");
+    expect(errorSpy).toHaveBeenCalledWith("[opencode-memory]", "msg");
+  });
+});
+
+describe("logger silent mode", () => {
+  it("silent mode with client does not call client.app.log", () => {
+    const client = {
+      app: {
+        log: mock(async () => undefined),
+      },
+    };
+    const logger = createLogger(client, { logLevel: "silent" });
+    logger.error("msg");
+    expect(client.app.log).not.toHaveBeenCalled();
+  });
+
+  it("silent mode without client does not call console.error", () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    const logger = createLogger(null, { logLevel: "silent" });
+    logger.error("msg");
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+});
+
+describe("logger level controls console too", () => {
+  it("logLevel 'error' with null client filters console.warn", () => {
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    const logger = createLogger(null, { logLevel: "error" });
+    logger.warn("msg");
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
