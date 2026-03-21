@@ -419,4 +419,42 @@ describe("config module", () => {
       expect(config.searchLayersEnabled).toBe(true);
     });
   });
+
+  describe("Phase 3 config fields", () => {
+    it("profileEnabled defaults to true", () => {
+      const config = getConfig("/test/project");
+      expect(config.profileEnabled).toBe(true);
+    });
+
+    it("profileExtractionMinPrompts defaults to 5", () => {
+      const config = getConfig("/test/project");
+      expect(config.profileExtractionMinPrompts).toBe(5);
+    });
+
+    it("profileMaxMessagesPerExtraction defaults to 20", () => {
+      const config = getConfig("/test/project");
+      expect(config.profileMaxMessagesPerExtraction).toBe(20);
+    });
+
+    it("webServerPort defaults to 18080", () => {
+      const config = getConfig("/test/project");
+      expect(config.webServerPort).toBe(18080);
+    });
+
+    it("profileEnabled can be set to false", () => {
+      writeConfigFile(`{
+  "profileEnabled": false
+}`);
+      const config = getConfig("/test/project");
+      expect(config.profileEnabled).toBe(false);
+    });
+
+    it("webServerPort can be customized", () => {
+      writeConfigFile(`{
+  "webServerPort": 8888
+}`);
+      const config = getConfig("/test/project");
+      expect(config.webServerPort).toBe(8888);
+    });
+  });
 });

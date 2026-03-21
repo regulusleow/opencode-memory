@@ -58,6 +58,27 @@ export function createDatabase(dbPath: string, _dimensions: number): Database {
     INSERT INTO memories_fts(memories_fts) SELECT 'rebuild' WHERE NOT EXISTS (SELECT 1 FROM memories_fts LIMIT 1)
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      id TEXT PRIMARY KEY,
+      profile_data TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 0,
+      last_analyzed_at INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS user_profile_changelog (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL,
+      change_type TEXT NOT NULL,
+      field TEXT NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      created_at INTEGER NOT NULL
+    )
+  `);
+
   return db;
 }
 

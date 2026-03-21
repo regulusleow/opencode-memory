@@ -24,6 +24,10 @@ interface RawPluginConfig {
   autoCaptureDelay?: unknown;
   autoCaptureMinImportance?: unknown;
   searchLayersEnabled?: unknown;
+  profileEnabled?: unknown;
+  profileExtractionMinPrompts?: unknown;
+  profileMaxMessagesPerExtraction?: unknown;
+  webServerPort?: unknown;
 }
 
 function getConfigFilePath(): string {
@@ -153,6 +157,10 @@ function getDefaultConfig(): PluginConfig {
     autoCaptureDelay: 10000,
     autoCaptureMinImportance: 6,
     searchLayersEnabled: true,
+    profileEnabled: true,
+    profileExtractionMinPrompts: 5,
+    profileMaxMessagesPerExtraction: 20,
+    webServerPort: 18080,
   };
 }
 
@@ -232,6 +240,22 @@ export function getConfig(projectPath: string): PluginConfig {
       typeof raw.searchLayersEnabled === "boolean"
         ? raw.searchLayersEnabled
         : defaults.searchLayersEnabled,
+    profileEnabled:
+      typeof raw.profileEnabled === "boolean"
+        ? raw.profileEnabled
+        : defaults.profileEnabled,
+    profileExtractionMinPrompts:
+      typeof raw.profileExtractionMinPrompts === "number"
+        ? raw.profileExtractionMinPrompts
+        : defaults.profileExtractionMinPrompts,
+    profileMaxMessagesPerExtraction:
+      typeof raw.profileMaxMessagesPerExtraction === "number"
+        ? raw.profileMaxMessagesPerExtraction
+        : defaults.profileMaxMessagesPerExtraction,
+    webServerPort:
+      typeof raw.webServerPort === "number"
+        ? raw.webServerPort
+        : defaults.webServerPort,
   };
 }
 

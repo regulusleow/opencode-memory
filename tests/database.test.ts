@@ -179,11 +179,29 @@ describe("database module", () => {
 
     setEmbeddingMeta(db, "nomic-embed-text-v1.5", 768);
 
-    expect(getEmbeddingMeta(db)).toEqual({
-      modelName: "nomic-embed-text-v1.5",
-      dimensions: 768,
-    });
+   expect(getEmbeddingMeta(db)).toEqual({
+     modelName: "nomic-embed-text-v1.5",
+     dimensions: 768,
+   });
 
-    closeDatabase(db);
-  });
+   closeDatabase(db);
+ });
+
+ it("creates user_profiles table", () => {
+   const db = createDatabase(":memory:", 4);
+   const result = db
+     .query("SELECT name FROM sqlite_master WHERE type='table' AND name='user_profiles'")
+     .get() as { name: string } | null;
+   expect(result).not.toBeNull();
+   closeDatabase(db);
+ });
+
+ it("creates user_profile_changelog table", () => {
+   const db = createDatabase(":memory:", 4);
+   const result = db
+     .query("SELECT name FROM sqlite_master WHERE type='table' AND name='user_profile_changelog'")
+     .get() as { name: string } | null;
+   expect(result).not.toBeNull();
+   closeDatabase(db);
+ });
 });
