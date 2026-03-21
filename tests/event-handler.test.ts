@@ -161,16 +161,36 @@ describe("Event Handler", () => {
   });
 
   it("autoCaptureEnabled: false prevents onIdle from being called", async () => {
+    const mockOnIdleProfile = vi.fn<(sessionID: string) => Promise<void>>(async () => {});
     const handler = createEventHandler({
       needsReinjection,
       onIdle: mockOnIdle,
-      config: makeConfig({ autoCaptureEnabled: false }),
+      onIdleProfile: mockOnIdleProfile,
+      config: makeConfig({ autoCaptureEnabled: false, profileEnabled: false }),
       logger,
     });
 
     await handler(makeEvent("session.idle", "ses_D"));
 
     expect(mockOnIdle).not.toHaveBeenCalled();
+    expect(mockOnIdleProfile).not.toHaveBeenCalled();
+  });
+
+  it("autoCaptureEnabled: false does NOT prevent profile extraction when profileEnabled: true", async () => {
+    const mockOnIdleProfile = vi.fn<(sessionID: string) => Promise<void>>(async () => {});
+    const handler = createEventHandler({
+      needsReinjection,
+      onIdle: mockOnIdle,
+      onIdleProfile: mockOnIdleProfile,
+      config: makeConfig({ autoCaptureEnabled: false, profileEnabled: true }),
+      logger,
+    });
+
+    await handler(makeEvent("session.idle", "ses_profile_skip_capture"));
+
+    expect(mockOnIdle).not.toHaveBeenCalled();
+    expect(mockOnIdleProfile).toHaveBeenCalledTimes(1);
+    expect(mockOnIdleProfile).toHaveBeenCalledWith("ses_profile_skip_capture");
   });
 
   it("different sessions are independently locked", async () => {

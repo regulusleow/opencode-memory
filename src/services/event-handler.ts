@@ -18,24 +18,28 @@ export function createEventHandler(options: {
 
     if (event.type === "session.idle") {
       const { sessionID } = event.properties;
-      if (!config.autoCaptureEnabled) return;
+      const shouldCapture = config.autoCaptureEnabled;
+      const shouldExtractProfile = config.profileEnabled && !!onIdleProfile;
+
+      if (!shouldCapture && !shouldExtractProfile) return;
       if (processing.get(sessionID)) return;
       processing.set(sessionID, true);
       try {
-        await onIdle(sessionID);
+        if (shouldCapture) {
+          await onIdle(sessionID);
+        }
+        if (shouldExtractProfile) {
+          try {
+            await onIdleProfile!(sessionID);
+          } catch (error) {
+            logger.error("Profile extraction failed", {
+              sessionID,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
       } finally {
         processing.delete(sessionID);
-      }
-      // Profile extraction after onIdle completes
-      if (config.profileEnabled && onIdleProfile) {
-        try {
-          await onIdleProfile(sessionID);
-        } catch (error) {
-          logger.error("Profile extraction failed", {
-            sessionID,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
       }
     } else if (event.type === "session.compacted") {
       const { sessionID } = event.properties;
