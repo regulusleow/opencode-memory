@@ -239,4 +239,136 @@ describe("config module", () => {
       expect(ids.size).toBe(100);
     });
   });
+
+  describe("Phase 2 config fields", () => {
+    it("getDefaultConfig should return privacyPatterns as empty array", () => {
+      const config = getConfig("/test/project");
+
+      expect(config.privacyPatterns).toEqual([]);
+    });
+
+    it("getDefaultConfig should return dedupSimilarityThreshold as 0.7", () => {
+      const config = getConfig("/test/project");
+
+      expect(config.dedupSimilarityThreshold).toBe(0.7);
+    });
+
+    it("getDefaultConfig should return autoCaptureEnabled as true", () => {
+      const config = getConfig("/test/project");
+
+      expect(config.autoCaptureEnabled).toBe(true);
+    });
+
+    it("getDefaultConfig should return autoCaptureDelay as 10000", () => {
+      const config = getConfig("/test/project");
+
+      expect(config.autoCaptureDelay).toBe(10000);
+    });
+
+    it("getDefaultConfig should return autoCaptureMinImportance as 6", () => {
+      const config = getConfig("/test/project");
+
+      expect(config.autoCaptureMinImportance).toBe(6);
+    });
+
+    it("should override privacyPatterns from config file", () => {
+      writeConfigFile(`{
+  "privacyPatterns": ["password", "token", "secret"]
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.privacyPatterns).toEqual(["password", "token", "secret"]);
+    });
+
+    it("should override dedupSimilarityThreshold from config file", () => {
+      writeConfigFile(`{
+  "dedupSimilarityThreshold": 0.9
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.dedupSimilarityThreshold).toBe(0.9);
+    });
+
+    it("should override autoCaptureEnabled from config file", () => {
+      writeConfigFile(`{
+  "autoCaptureEnabled": false
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.autoCaptureEnabled).toBe(false);
+    });
+
+    it("should override autoCaptureDelay from config file", () => {
+      writeConfigFile(`{
+  "autoCaptureDelay": 5000
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.autoCaptureDelay).toBe(5000);
+    });
+
+    it("should override autoCaptureMinImportance from config file", () => {
+      writeConfigFile(`{
+  "autoCaptureMinImportance": 8
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.autoCaptureMinImportance).toBe(8);
+    });
+
+    it("should fall back to default when privacyPatterns has invalid types", () => {
+      writeConfigFile(`{
+  "privacyPatterns": ["valid", 123, null, "another"]
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.privacyPatterns).toEqual(["valid", "another"]);
+    });
+
+    it("should fall back to default when dedupSimilarityThreshold is not a number", () => {
+      writeConfigFile(`{
+  "dedupSimilarityThreshold": "not-a-number"
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.dedupSimilarityThreshold).toBe(0.7);
+    });
+
+    it("should fall back to default when autoCaptureEnabled is not a boolean", () => {
+      writeConfigFile(`{
+  "autoCaptureEnabled": 42
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.autoCaptureEnabled).toBe(true);
+    });
+
+    it("should fall back to default when autoCaptureDelay is not a number", () => {
+      writeConfigFile(`{
+  "autoCaptureDelay": true
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.autoCaptureDelay).toBe(10000);
+    });
+
+    it("should fall back to default when autoCaptureMinImportance is not a number", () => {
+      writeConfigFile(`{
+  "autoCaptureMinImportance": []
+}`);
+
+      const config = getConfig("/test/project");
+
+      expect(config.autoCaptureMinImportance).toBe(6);
+    });
+  });
 });

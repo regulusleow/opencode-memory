@@ -28,4 +28,9 @@ export interface PluginConfig {
   localModel: string;
   localDtype: string;
   localCacheDir: string;
+  privacyPatterns: string[];
+  dedupSimilarityThreshold: number;
+  autoCaptureEnabled: boolean;
+  autoCaptureDelay: number;
+  autoCaptureMinImportance: number;
 }

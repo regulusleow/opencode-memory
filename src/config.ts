@@ -18,6 +18,11 @@ interface RawPluginConfig {
   localModel?: unknown;
   localDtype?: unknown;
   localCacheDir?: unknown;
+  privacyPatterns?: unknown;
+  dedupSimilarityThreshold?: unknown;
+  autoCaptureEnabled?: unknown;
+  autoCaptureDelay?: unknown;
+  autoCaptureMinImportance?: unknown;
 }
 
 function getConfigFilePath(): string {
@@ -141,6 +146,11 @@ function getDefaultConfig(): PluginConfig {
     localModel: "nomic-ai/nomic-embed-text-v1.5",
     localDtype: "q8",
     localCacheDir: join(storagePath, "models"),
+    privacyPatterns: [],
+    dedupSimilarityThreshold: 0.7,
+    autoCaptureEnabled: true,
+    autoCaptureDelay: 10000,
+    autoCaptureMinImportance: 6,
   };
 }
 
@@ -197,6 +207,25 @@ export function getConfig(projectPath: string): PluginConfig {
       typeof raw.localCacheDir === "string"
         ? expandPath(raw.localCacheDir)
         : join(storagePath, "models"),
+    privacyPatterns: Array.isArray(raw.privacyPatterns)
+      ? raw.privacyPatterns.filter((p) => typeof p === "string")
+      : defaults.privacyPatterns,
+    dedupSimilarityThreshold:
+      typeof raw.dedupSimilarityThreshold === "number"
+        ? raw.dedupSimilarityThreshold
+        : defaults.dedupSimilarityThreshold,
+    autoCaptureEnabled:
+      typeof raw.autoCaptureEnabled === "boolean"
+        ? raw.autoCaptureEnabled
+        : defaults.autoCaptureEnabled,
+    autoCaptureDelay:
+      typeof raw.autoCaptureDelay === "number"
+        ? raw.autoCaptureDelay
+        : defaults.autoCaptureDelay,
+    autoCaptureMinImportance:
+      typeof raw.autoCaptureMinImportance === "number"
+        ? raw.autoCaptureMinImportance
+        : defaults.autoCaptureMinImportance,
   };
 }
 
