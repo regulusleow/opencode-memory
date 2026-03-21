@@ -26,6 +26,16 @@ function makeConfig(): PluginConfig {
     storagePath: "/tmp",
     searchLimit: 5,
     contextLimit: 3,
+    embeddingBackend: "auto",
+    localModel: "nomic-ai/nomic-embed-text-v1.5",
+    localDtype: "q8",
+    localCacheDir: "/tmp/models",
+    privacyPatterns: [],
+    dedupSimilarityThreshold: 0.7,
+    autoCaptureEnabled: false,
+    autoCaptureDelay: 10000,
+    autoCaptureMinImportance: 6,
+    searchLayersEnabled: true,
   };
 }
 
@@ -133,6 +143,98 @@ describe("MemoryStore", () => {
 
     expect(results.length).toBe(1);
     expect(results[0]?.id).toBe(added.id);
+  });
+
+  it("search() returns empty array for empty query", async () => {
+    const store = createMemoryStore(
+      db,
+      makeMockEmbedding({ error: "unused" }),
+      makeConfig(),
+      vectorBackend
+    );
+    const results = await store.search("", 10);
+    expect(results).toEqual([]);
+  });
+
+  it("search() returns empty array for whitespace-only query", async () => {
+    const store = createMemoryStore(
+      db,
+      makeMockEmbedding({ error: "unused" }),
+      makeConfig(),
+      vectorBackend
+    );
+    const results = await store.search("   ", 10);
+    expect(results).toEqual([]);
+  });
+
+  it("search() finds memories via FTS5 exact when embedding fails", async () => {
+    const store = createMemoryStore(
+      db,
+      makeMockEmbedding({ error: "embedding down" }),
+      makeConfig(),
+      vectorBackend
+    );
+    const now = Date.now();
+    db.query(
+      "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run(
+      "mem_fts",
+      "TypeScript language memory for search",
+      "",
+      "general",
+      "{}",
+      "done",
+      now,
+      now
+    );
+
+    const results = await store.search("TypeScript language memory", 10);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]?.id).toBe("mem_fts");
+  });
+
+  it("search() applies recency bonus in post-RRF scoring", async () => {
+    const store = createMemoryStore(
+      db,
+      makeMockEmbedding({ error: "embedding down" }),
+      makeConfig(),
+      vectorBackend
+    );
+    const now = Date.now();
+    const old = now - 120 * 24 * 60 * 60 * 1000;
+    db.query(
+      "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run(
+      "mem_old_bonus",
+      "recency ranking memory example",
+      "",
+      "general",
+      "{}",
+      "done",
+      old,
+      old
+    );
+    db.query(
+      "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run(
+      "mem_new_bonus",
+      "recency ranking memory example",
+      "",
+      "general",
+      "{}",
+      "done",
+      now,
+      now
+    );
+
+    const results = await store.search("recency ranking memory", 10);
+    const oldResult = results.find((r) => r.id === "mem_old_bonus");
+    const newResult = results.find((r) => r.id === "mem_new_bonus");
+
+    expect(oldResult).toBeDefined();
+    expect(newResult).toBeDefined();
+    expect(results[0]?.id).toBe("mem_new_bonus");
+    expect((newResult?.score ?? 0) > (oldResult?.score ?? 0)).toBe(true);
   });
 
   it("search() triggers pending retry before search", async () => {
@@ -322,6 +424,25 @@ describe("MemoryStore", () => {
       .query("SELECT embedding_status FROM memories WHERE id = ?")
       .get("mem_fail") as { embedding_status: string };
     expect(row.embedding_status).toBe("failed");
+  });
+
+  it("search uses legacy LIKE path when searchLayersEnabled is false", async () => {
+    const legacyConfig = { ...makeConfig(), searchLayersEnabled: false };
+    const legacyStore = createMemoryStore(
+      db,
+      makeMockEmbedding({ error: "embed unavailable" }),
+      legacyConfig,
+      vectorBackend
+    );
+    await legacyStore.add("legacy test content", {
+      tags: "test",
+      type: "test",
+      metadata: {},
+    });
+    const results = await legacyStore.search("legacy test", 10);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].score).toBe(0);
+    expect(results[0].distance).toBe(Number.POSITIVE_INFINITY);
   });
 
   it("uses bun:test mock utility in assertions", () => {

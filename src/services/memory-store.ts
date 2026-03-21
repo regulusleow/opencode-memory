@@ -7,6 +7,8 @@ import type { PrivacyFilter } from "./privacy.js";
 import type { DedupService } from "./dedup.js";
 import type { Logger } from "./logger.js";
 import { encodeVector } from "./vector-backend.js";
+import { fts5ExactSearch, fts5FuzzySearch } from "./fts5-search.js";
+import { rrfFuse, applyPostRRFBonus } from "./search-fusion.js";
 
 export interface MemoryStore {
   add(
@@ -43,22 +45,6 @@ function rowToMemory(row: any): Memory {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
-}
-
-function computeScore(
-  semanticScore: number,
-  isKeywordMatch: boolean,
-  createdAt: number,
-  query: string,
-  memoryTags: string
-): number {
-  const keywordScore = isKeywordMatch ? 1.0 : 0.0;
-  const compositeScore = 0.7 * semanticScore + 0.3 * keywordScore;
-  const ageDays = (Date.now() - createdAt) / 86400000;
-  const recencyMultiplier = Math.exp(-ageDays / 30);
-  const queryWords = query.toLowerCase().split(/\s+/);
-  const tagBonus = queryWords.some((w) => (memoryTags ?? "").toLowerCase().includes(w)) ? 0.5 : 0;
-  return compositeScore * recencyMultiplier + tagBonus;
 }
 
 export function createMemoryStore(
@@ -167,77 +153,11 @@ export function createMemoryStore(
     async search(query, limit) {
       const finalLimit = limit ?? config.searchLimit;
 
-      void this.retryPendingEmbeddings(5).catch(() => undefined);
+      if (!query || query.trim().length === 0) {
+        return [];
+      }
 
-      try {
-        const queryEmbedding = await embeddingService.embed(query, "query");
-
-        const vectorResults: MemorySearchResult[] = [];
-        if ("embedding" in queryEmbedding) {
-          const queryVec = new Float32Array(queryEmbedding.embedding);
-          const matches = await vectorBackend.search(queryVec, finalLimit);
-
-          for (const match of matches) {
-            const row = db
-              .query("SELECT * FROM memories WHERE id = ?")
-              .get(match.id) as any | null;
-            if (!row) {
-              continue;
-            }
-
-            const memory = rowToMemory(row);
-            vectorResults.push({
-              ...memory,
-              score: computeScore(match.score, false, memory.createdAt, query, memory.tags),
-              distance: 1 - match.score,
-            });
-          }
-        }
-
-        const likeQuery = `%${query}%`;
-        const textRows = db
-          .query(
-            "SELECT * FROM memories WHERE content LIKE ? OR tags LIKE ? ORDER BY created_at DESC LIMIT ?"
-          )
-          .all(likeQuery, likeQuery, finalLimit) as any[];
-
-        const textResults = textRows.map((row) => {
-          const memory = rowToMemory(row);
-          return {
-            ...memory,
-            score: computeScore(0, true, memory.createdAt, query, memory.tags),
-            distance: Number.POSITIVE_INFINITY,
-          } satisfies MemorySearchResult;
-        });
-
-        if (!("embedding" in queryEmbedding)) {
-          textResults.sort((a, b) => b.score - a.score);
-          return textResults.slice(0, finalLimit);
-        }
-
-        const merged: MemorySearchResult[] = [];
-        const seen = new Set<string>();
-
-        for (const result of vectorResults) {
-          if (seen.has(result.id)) {
-            continue;
-          }
-          seen.add(result.id);
-          merged.push(result);
-        }
-
-        for (const result of textResults) {
-          if (seen.has(result.id)) {
-            continue;
-          }
-          seen.add(result.id);
-          merged.push(result);
-        }
-
-        merged.sort((a, b) => b.score - a.score);
-
-        return merged.slice(0, finalLimit);
-      } catch {
+      if (!config.searchLayersEnabled) {
         const likeQuery = `%${query}%`;
         const textRows = db
           .query(
@@ -251,6 +171,88 @@ export function createMemoryStore(
           distance: Number.POSITIVE_INFINITY,
         }));
       }
+
+      void this.retryPendingEmbeddings(5).catch(() => undefined);
+
+      const exactResults = fts5ExactSearch(db, query, finalLimit);
+
+      const semanticResults: Array<{ id: string; rank: number }> = [];
+      const vectorDistances = new Map<string, number>();
+
+      try {
+        const queryEmbedding = await embeddingService.embed(query, "query");
+
+        if ("embedding" in queryEmbedding) {
+          const queryVec = new Float32Array(queryEmbedding.embedding);
+          const matches = await vectorBackend.search(queryVec, finalLimit);
+
+          for (let i = 0; i < matches.length; i += 1) {
+            const match = matches[i];
+            if (!match) {
+              continue;
+            }
+            semanticResults.push({ id: match.id, rank: i + 1 });
+            vectorDistances.set(match.id, 1 - match.score);
+          }
+        }
+      } catch {
+      }
+
+      const fuzzyResults = fts5FuzzySearch(db, query, finalLimit);
+      const fusedScores = rrfFuse([exactResults, semanticResults, fuzzyResults]);
+
+      if (fusedScores.size === 0) {
+        const likeQuery = `%${query}%`;
+        const textRows = db
+          .query(
+            "SELECT * FROM memories WHERE content LIKE ? OR tags LIKE ? ORDER BY created_at DESC LIMIT ?"
+          )
+          .all(likeQuery, likeQuery, finalLimit) as any[];
+
+        return textRows.map((row) => ({
+          ...rowToMemory(row),
+          score: 0,
+          distance: Number.POSITIVE_INFINITY,
+        }));
+      }
+
+      const bonuses = new Map<string, number>();
+      for (const id of fusedScores.keys()) {
+        const row = db
+          .query("SELECT created_at, tags FROM memories WHERE id = ?")
+          .get(id) as { created_at: number; tags: string } | null;
+        if (!row) {
+          continue;
+        }
+
+        const ageDays = (Date.now() - row.created_at) / 86400000;
+        const recencyBonus = Math.exp(-ageDays / 30) * 0.01;
+        const queryWords = query.toLowerCase().split(/\s+/);
+        const tagBonus = queryWords.some((w) => (row.tags ?? "").toLowerCase().includes(w))
+          ? 0.005
+          : 0;
+        bonuses.set(id, recencyBonus + tagBonus);
+      }
+
+      const finalScores = applyPostRRFBonus(fusedScores, bonuses);
+
+      const results: MemorySearchResult[] = [];
+      for (const [id, score] of finalScores) {
+        const row = db.query("SELECT * FROM memories WHERE id = ?").get(id) as any | null;
+        if (!row) {
+          continue;
+        }
+
+        const memory = rowToMemory(row);
+        results.push({
+          ...memory,
+          score,
+          distance: vectorDistances.get(id) ?? Number.POSITIVE_INFINITY,
+        });
+      }
+
+      results.sort((a, b) => b.score - a.score);
+      return results.slice(0, finalLimit);
     },
 
     async list(limit, offset) {

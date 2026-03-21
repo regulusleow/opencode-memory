@@ -24,17 +24,47 @@ describe("database module", () => {
     closeDatabase(db);
   });
 
-  it("creates memories and embedding_meta tables without any virtual table", () => {
+  it("creates memories, embedding_meta, and memories_fts tables", () => {
     const db = createDatabase(":memory:", 4);
 
     const rows = db
-      .query("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")
+      .query("SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE '%_fts_%'")
       .all() as Array<{ name: string }>;
     const names = new Set(rows.map((row) => row.name));
 
     expect(names.has("memories")).toBe(true);
     expect(names.has("embedding_meta")).toBe(true);
-    expect(names.size).toBe(2);
+
+    closeDatabase(db);
+  });
+
+  it("memories_fts virtual table exists after createDatabase()", () => {
+    const db = createDatabase(":memory:", 4);
+
+    const ftsTable = db
+      .query("SELECT name FROM sqlite_master WHERE type='table' AND name='memories_fts'")
+      .get() as { name: string } | null;
+
+    expect(ftsTable).not.toBeNull();
+
+    closeDatabase(db);
+  });
+
+  it("FTS5 triggers sync inserted memory", () => {
+    const db = createDatabase(":memory:", 4);
+    const now = Date.now();
+
+    db.query(
+      "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run("fts_test_1", "hello world memory", "test", "general", "{}", "done", now, now);
+
+    const result = db
+      .query(
+        "SELECT m.id FROM memories m WHERE m.rowid IN (SELECT rowid FROM memories_fts WHERE memories_fts MATCH 'hel')"
+      )
+      .get() as { id: string } | null;
+
+    expect(result?.id).toBe("fts_test_1");
 
     closeDatabase(db);
   });
