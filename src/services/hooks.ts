@@ -1,14 +1,15 @@
 import type { MemoryStore } from "./memory-store.js";
+import type { ProfileStore } from "./profile-store.js";
 import type { PluginConfig } from "../types.js";
-import { formatMemoryContext } from "./context.js";
+import { formatMemoryContext, formatProfileContext } from "./context.js";
 
-// Module-level sets for per-session tracking
 export const injectedSessions = new Set<string>();
 export const needsReinjection = new Set<string>();
 
 export function createChatMessageHook(
   store: MemoryStore,
-  config: PluginConfig
+  config: PluginConfig,
+  profileStore?: ProfileStore
 ): (
   input: { sessionID: string },
   output: { message: { id: string }; parts: any[] }
@@ -27,18 +28,35 @@ export function createChatMessageHook(
       }
 
       const memories = await store.search(query, config.contextLimit);
-      if (memories.length === 0) return;
+      if (memories.length > 0) {
+        const contextPart = {
+          id: `prt-memory-context-${Date.now()}`,
+          sessionID: input.sessionID,
+          messageID: output.message.id,
+          type: "text",
+          text: formatMemoryContext(memories, "chat"),
+          synthetic: true,
+        } as any;
 
-      const contextPart = {
-        id: `prt-memory-context-${Date.now()}`,
-        sessionID: input.sessionID,
-        messageID: output.message.id,
-        type: "text",
-        text: formatMemoryContext(memories, "chat"),
-        synthetic: true,
-      } as any;
+        output.parts.unshift(contextPart);
+      }
 
-      output.parts.unshift(contextPart);
+      if (profileStore && config.profileEnabled) {
+        const profile = profileStore.getProfile();
+        if (profile) {
+          const profileText = formatProfileContext(profile);
+          if (profileText) {
+            output.parts.unshift({
+              id: `prt-profile-context-${Date.now()}`,
+              sessionID: input.sessionID,
+              messageID: output.message.id,
+              type: "text",
+              text: profileText,
+              synthetic: true,
+            } as any);
+          }
+        }
+      }
     } catch {
       // swallow errors silently
     } finally {

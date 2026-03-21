@@ -6,6 +6,8 @@ import {
   injectedSessions,
   needsReinjection,
 } from "../src/services/hooks.js";
+import { createDatabase } from "../src/services/database.js";
+import { createProfileStore } from "../src/services/profile-store.js";
 
 const defaultConfig: PluginConfig = {
   embeddingApiUrl: "http://localhost:1234/v1/embeddings",
@@ -24,6 +26,11 @@ const defaultConfig: PluginConfig = {
   autoCaptureEnabled: true,
   autoCaptureDelay: 10000,
   autoCaptureMinImportance: 6,
+  searchLayersEnabled: true,
+  profileEnabled: true,
+  profileExtractionMinPrompts: 5,
+  profileMaxMessagesPerExtraction: 20,
+  webServerPort: 18080,
 };
 
 function makeMockStore(searchResult: MemorySearchResult[]): MemoryStore {
@@ -334,5 +341,131 @@ describe("createChatMessageHook", () => {
     expect(output.parts.length).toBe(2);
     expect(output.parts[0].synthetic).toBe(true);
     expect(output.parts[1].text).toBe("some user message"); // original message is now at index 1
+  });
+});
+
+function makeProfileDb() {
+  const db = createDatabase(":memory:", 0);
+  return { db, profileStore: createProfileStore(db) };
+}
+
+function makeTestProfile(overrides?: Partial<{
+  preferences: { key: string; value: string; confidence: number; evidence: string[]; updatedAt: number }[];
+  patterns: { key: string; description: string; frequency: number; lastSeen: number }[];
+  workflows: { name: string; steps: string[]; frequency: number; lastSeen: number }[];
+}>) {
+  const now = Date.now();
+  return {
+    id: "singleton",
+    preferences: overrides?.preferences ?? [
+      { key: "lang", value: "TypeScript", confidence: 0.9, evidence: [], updatedAt: now },
+    ],
+    patterns: overrides?.patterns ?? [],
+    workflows: overrides?.workflows ?? [],
+    version: 1,
+    lastAnalyzedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+describe("createChatMessageHook — profile injection", () => {
+  beforeEach(() => {
+    injectedSessions.clear();
+    needsReinjection.clear();
+  });
+
+  it("injects profile part when profile exists", async () => {
+    const { profileStore } = makeProfileDb();
+    profileStore.saveProfile(makeTestProfile());
+
+    const store = makeMockStore([]);
+    const hook = createChatMessageHook(store, defaultConfig, profileStore);
+    const input = { sessionID: "ses_p1" };
+    const output = makeOutput("msg_p1");
+
+    await hook(input, output);
+
+    const profilePart = output.parts.find((p: any) => p.text?.includes("<user_profile>"));
+    expect(profilePart).toBeDefined();
+    expect(profilePart.synthetic).toBe(true);
+  });
+
+  it("profile part uses <user_profile> XML tag", async () => {
+    const { profileStore } = makeProfileDb();
+    profileStore.saveProfile(makeTestProfile({
+      preferences: [{ key: "style", value: "functional", confidence: 0.8, evidence: [], updatedAt: Date.now() }],
+    }));
+
+    const store = makeMockStore([]);
+    const hook = createChatMessageHook(store, defaultConfig, profileStore);
+    const input = { sessionID: "ses_p2" };
+    const output = makeOutput("msg_p2");
+
+    await hook(input, output);
+
+    const profilePart = output.parts.find((p: any) => p.text?.includes("<user_profile>"));
+    expect(profilePart).toBeDefined();
+    expect(profilePart.text).toContain("</user_profile>");
+    expect(profilePart.text).toContain("style");
+    expect(profilePart.text).toContain("functional");
+  });
+
+  it("profile part comes before memory part (correct order)", async () => {
+    const { profileStore } = makeProfileDb();
+    profileStore.saveProfile(makeTestProfile());
+
+    const storeWithMemory = makeMockStore([makeSearchResult()]);
+    const hook = createChatMessageHook(storeWithMemory, defaultConfig, profileStore);
+    const input = { sessionID: "ses_p3" };
+    const output = makeOutput("msg_p3");
+
+    await hook(input, output);
+
+    const profileIdx = output.parts.findIndex((p: any) => p.text?.includes("<user_profile>"));
+    const memoryIdx = output.parts.findIndex((p: any) => p.text?.includes("<relevant_memories>"));
+    expect(profileIdx).toBeGreaterThanOrEqual(0);
+    expect(memoryIdx).toBeGreaterThanOrEqual(0);
+    expect(profileIdx).toBeLessThan(memoryIdx);
+  });
+
+  it("does NOT inject profile part when profile is null", async () => {
+    const { profileStore } = makeProfileDb();
+
+    const store = makeMockStore([]);
+    const hook = createChatMessageHook(store, defaultConfig, profileStore);
+    const input = { sessionID: "ses_p4" };
+    const output = makeOutput("msg_p4");
+
+    await hook(input, output);
+
+    const profilePart = output.parts.find((p: any) => p.text?.includes("<user_profile>"));
+    expect(profilePart).toBeUndefined();
+  });
+
+  it("does NOT inject profile when profileEnabled=false in config", async () => {
+    const { profileStore } = makeProfileDb();
+    profileStore.saveProfile(makeTestProfile());
+
+    const disabledConfig = { ...defaultConfig, profileEnabled: false };
+    const store = makeMockStore([]);
+    const hook = createChatMessageHook(store, disabledConfig, profileStore);
+    const input = { sessionID: "ses_p5" };
+    const output = makeOutput("msg_p5");
+
+    await hook(input, output);
+
+    const profilePart = output.parts.find((p: any) => p.text?.includes("<user_profile>"));
+    expect(profilePart).toBeUndefined();
+  });
+
+  it("works without profileStore (backward compatibility)", async () => {
+    const store = makeMockStore([]);
+    const hook = createChatMessageHook(store, defaultConfig);
+    const input = { sessionID: "ses_p6" };
+    const output = makeOutput("msg_p6");
+
+    await hook(input, output);
+    expect(output.parts.length).toBe(1);
   });
 });
