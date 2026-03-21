@@ -1,0 +1,227 @@
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+import type { Logger } from "../src/services/logger.js";
+import type { MemoryStore } from "../src/services/memory-store.js";
+import type { Memory, PluginConfig } from "../src/types.js";
+import { createAutoCapture, scoreImportance } from "../src/services/auto-capture.js";
+
+function makeConfig(overrides: Partial<PluginConfig> = {}): PluginConfig {
+  return {
+    embeddingApiUrl: "",
+    embeddingApiKey: "",
+    embeddingModel: "",
+    embeddingDimensions: 1536,
+    storagePath: "",
+    searchLimit: 5,
+    contextLimit: 3,
+    embeddingBackend: "auto",
+    localModel: "",
+    localDtype: "",
+    localCacheDir: "",
+    privacyPatterns: [],
+    dedupSimilarityThreshold: 0.7,
+    autoCaptureEnabled: true,
+    autoCaptureDelay: 0,
+    autoCaptureMinImportance: 6,
+    ...overrides,
+  };
+}
+
+function makeMemory(content: string): Memory {
+  const now = Date.now();
+  return {
+    id: `mem_${Math.random().toString(36).slice(2)}`,
+    content,
+    tags: "auto-captured",
+    type: "auto",
+    metadata: {},
+    embeddingStatus: "done",
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function makeStore() {
+  const add = mock(async (content: string) => makeMemory(content));
+
+  const store: MemoryStore = {
+    add,
+    search: mock(async () => []),
+    list: mock(async () => []),
+    forget: mock(async () => true),
+    get: mock(async () => null),
+    retryPendingEmbeddings: mock(async () => 0),
+  };
+
+  return { store, add };
+}
+
+function makeLogger(): Logger {
+  return {
+    debug: mock(() => {}),
+    info: mock(() => {}),
+    warn: mock(() => {}),
+    error: mock(() => {}),
+  };
+}
+
+function makeClient(messages: Array<{ info: any; parts: any[] }>) {
+  return {
+    session: {
+      messages: mock(async () => messages),
+    },
+  };
+}
+
+describe("scoreImportance", () => {
+  it("returns baseline 5 for plain short text", () => {
+    expect(scoreImportance("ok")).toBe(5);
+  });
+
+  it("adds +2 for each matching keyword", () => {
+    const score = scoreImportance("decision architecture bug");
+    expect(score).toBe(11);
+  });
+
+  it("adds +1 when text length is over 200", () => {
+    const longText = "a".repeat(201);
+    expect(scoreImportance(longText)).toBe(6);
+  });
+
+  it("adds +1 when text contains fenced code block marker", () => {
+    expect(scoreImportance("here is code ```const a = 1;```")).toBe(6);
+  });
+});
+
+describe("createAutoCapture", () => {
+  let logger: Logger;
+
+  beforeEach(() => {
+    logger = makeLogger();
+  });
+
+  it("stores high-importance text", async () => {
+    const { store, add } = makeStore();
+    const client = makeClient([
+      {
+        info: {},
+        parts: [{ type: "text", text: "We made a key decision today" }],
+      },
+    ]);
+
+    const capture = createAutoCapture({ client, store, config: makeConfig(), logger });
+    await capture("ses_1");
+
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith("We made a key decision today", {
+      tags: "auto-captured",
+      type: "auto",
+    });
+  });
+
+  it("does not store low-importance text", async () => {
+    const { store, add } = makeStore();
+    const client = makeClient([
+      {
+        info: {},
+        parts: [{ type: "text", text: "ok" }],
+      },
+    ]);
+
+    const capture = createAutoCapture({ client, store, config: makeConfig(), logger });
+    await capture("ses_2");
+
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it("caps auto-captured records to top 3", async () => {
+    const { store, add } = makeStore();
+    const client = makeClient([
+      { info: {}, parts: [{ type: "text", text: "decision" }] },
+      { info: {}, parts: [{ type: "text", text: "decision architecture" }] },
+      { info: {}, parts: [{ type: "text", text: "decision architecture bug" }] },
+      { info: {}, parts: [{ type: "text", text: "decision architecture bug fix" }] },
+      {
+        info: {},
+        parts: [
+          {
+            type: "text",
+            text: "decision architecture bug fix lesson",
+          },
+        ],
+      },
+    ]);
+
+    const capture = createAutoCapture({ client, store, config: makeConfig(), logger });
+    await capture("ses_3");
+
+    expect(add).toHaveBeenCalledTimes(3);
+  });
+
+  it("only evaluates TextPart and ignores ToolPart", async () => {
+    const { store, add } = makeStore();
+    const client = makeClient([
+      {
+        info: {},
+        parts: [
+          { type: "text", text: "ok" },
+          { type: "tool", text: "decision architecture bug" },
+        ],
+      },
+    ]);
+
+    const capture = createAutoCapture({ client, store, config: makeConfig(), logger });
+    await capture("ses_4");
+
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when messages list is empty", async () => {
+    const { store, add } = makeStore();
+    const client = makeClient([]);
+
+    const capture = createAutoCapture({ client, store, config: makeConfig(), logger });
+    await capture("ses_5");
+
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it("catches client error and logs failure", async () => {
+    const { store } = makeStore();
+    const client = {
+      session: {
+        messages: mock(async () => {
+          throw new Error("network down");
+        }),
+      },
+    };
+
+    const capture = createAutoCapture({ client, store, config: makeConfig(), logger });
+
+    await capture("ses_6");
+    expect(logger.error as ReturnType<typeof mock>).toHaveBeenCalledTimes(1);
+    expect(logger.error as ReturnType<typeof mock>).toHaveBeenCalledWith(
+      "Auto-capture failed",
+      expect.objectContaining({ sessionID: "ses_6" })
+    );
+  });
+
+  it("completes successfully with zero delay", async () => {
+    const { store } = makeStore();
+    const client = makeClient([
+      {
+        info: {},
+        parts: [{ type: "text", text: "decision" }],
+      },
+    ]);
+
+    const capture = createAutoCapture({
+      client,
+      store,
+      config: makeConfig({ autoCaptureDelay: 0 }),
+      logger,
+    });
+
+    await capture("ses_7");
+    expect(client.session.messages).toHaveBeenCalledTimes(1);
+  });
+});
