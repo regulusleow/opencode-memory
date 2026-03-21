@@ -1,4 +1,4 @@
-import type { Memory, MemorySearchResult } from "../types.js";
+import type { Memory, MemorySearchResult, UserProfile } from "../types.js";
 
 /**
  * 格式化搜索结果用于对话上下文或搜索结果展示
@@ -76,7 +76,85 @@ export function formatHelp(): string {
 2. search - Search memories by keywords or semantic similarity
 3. list - List all stored memories with basic info
 4. forget - Delete a specific memory by ID
-5. help - Show this help message
+5. profile - View or manage your user profile (actions: show, analyze, delete, reset)
+6. web - Start the web UI dashboard
+7. help - Show this help message
 
 Use any of these modes to manage your persistent memories across sessions.`;
+}
+
+export function formatProfileDisplay(profile: UserProfile): string {
+  const sections: string[] = [];
+
+  if (profile.preferences.length > 0) {
+    const sorted = [...profile.preferences].sort((a, b) => b.confidence - a.confidence);
+    const items = sorted
+      .slice(0, 5)
+      .map((p) => `  - ${p.key}: ${p.value} (confidence: ${Math.round(p.confidence * 100)}%)`)
+      .join("\n");
+    sections.push(`Preferences:\n${items}`);
+  }
+
+  if (profile.patterns.length > 0) {
+    const sorted = [...profile.patterns].sort((a, b) => b.frequency - a.frequency);
+    const items = sorted
+      .slice(0, 5)
+      .map((p) => `  - ${p.key}: ${p.description} (seen ${p.frequency} times)`)
+      .join("\n");
+    sections.push(`Patterns:\n${items}`);
+  }
+
+  if (profile.workflows.length > 0) {
+    const sorted = [...profile.workflows].sort((a, b) => b.frequency - a.frequency);
+    const items = sorted
+      .slice(0, 3)
+      .map((w) => `  - ${w.name}: ${w.steps.join(" -> ")} (used ${w.frequency} times)`)
+      .join("\n");
+    sections.push(`Workflows:\n${items}`);
+  }
+
+  if (sections.length === 0) {
+    return "Profile exists but has no data yet.";
+  }
+
+  const header = `User Profile (v${profile.version}):`;
+  return `${header}\n\n${sections.join("\n\n")}`;
+}
+
+export function formatProfileContext(profile: UserProfile): string {
+  const lines: string[] = [];
+
+  if (profile.preferences.length > 0) {
+    lines.push("## Preferences");
+    const top = [...profile.preferences]
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 5);
+    for (const p of top) {
+      lines.push(`- ${p.key}: ${p.value} (confidence: ${Math.round(p.confidence * 100)}%)`);
+    }
+  }
+
+  if (profile.patterns.length > 0) {
+    lines.push("## Coding Patterns");
+    const top = [...profile.patterns]
+      .sort((a, b) => b.frequency - a.frequency)
+      .slice(0, 5);
+    for (const p of top) {
+      lines.push(`- ${p.key}: ${p.description} (observed ${p.frequency} times)`);
+    }
+  }
+
+  if (profile.workflows.length > 0) {
+    lines.push("## Workflows");
+    const top = [...profile.workflows]
+      .sort((a, b) => b.frequency - a.frequency)
+      .slice(0, 3);
+    for (const w of top) {
+      lines.push(`- ${w.name}: ${w.steps.join(" → ")} (used ${w.frequency} times)`);
+    }
+  }
+
+  if (lines.length === 0) return "";
+
+  return `<user_profile>\n${lines.join("\n")}\n</user_profile>`;
 }
