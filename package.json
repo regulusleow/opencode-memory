@@ -1,12 +1,31 @@
 {
   "name": "opencode-memory",
   "version": "0.1.0",
+  "description": "Memory plugin for OpenCode — semantic search, auto-capture, user profiling, and web UI",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun --external @huggingface/transformers --external onnxruntime-node",
+    "build": "bun build src/index.ts --outdir dist --target bun --external @huggingface/transformers --external onnxruntime-node && tsc --emitDeclarationOnly --outDir dist",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run typecheck && bun run build"
+  },
+  "keywords": ["opencode", "plugin", "memory", "embedding", "semantic-search"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/regulusleow/opencode-memory.git"
+  },
+  "files": ["dist", "package.json", "README.md", "LICENSE"],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@opencode-ai/plugin": "latest",
