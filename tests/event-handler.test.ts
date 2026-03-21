@@ -21,6 +21,11 @@ function makeConfig(overrides: Partial<PluginConfig> = {}): PluginConfig {
     autoCaptureEnabled: true,
     autoCaptureDelay: 10000,
     autoCaptureMinImportance: 6,
+    searchLayersEnabled: false,
+    profileEnabled: true,
+    profileExtractionMinPrompts: 5,
+    profileMaxMessagesPerExtraction: 50,
+    webServerPort: 3000,
     ...overrides,
   };
 }
@@ -196,5 +201,74 @@ describe("Event Handler", () => {
     await Promise.all([pX, pY]);
     expect(callArgs).toContain("ses_X");
     expect(callArgs).toContain("ses_Y");
+  });
+
+  it("session.idle triggers onIdleProfile when profileEnabled=true", async () => {
+    const mockOnIdleProfile = vi.fn<(sessionID: string) => Promise<void>>(async () => {});
+    const handler = createEventHandler({
+      needsReinjection,
+      onIdle: mockOnIdle,
+      onIdleProfile: mockOnIdleProfile,
+      config: makeConfig({ profileEnabled: true }),
+      logger,
+    });
+
+    await handler(makeEvent("session.idle", "ses_profile_1"));
+
+    expect(mockOnIdleProfile).toHaveBeenCalledTimes(1);
+    expect(mockOnIdleProfile).toHaveBeenCalledWith("ses_profile_1");
+  });
+
+  it("session.idle does NOT call onIdleProfile when profileEnabled=false", async () => {
+    const mockOnIdleProfile = vi.fn<(sessionID: string) => Promise<void>>(async () => {});
+    const handler = createEventHandler({
+      needsReinjection,
+      onIdle: mockOnIdle,
+      onIdleProfile: mockOnIdleProfile,
+      config: makeConfig({ profileEnabled: false }),
+      logger,
+    });
+
+    await handler(makeEvent("session.idle", "ses_profile_2"));
+
+    expect(mockOnIdleProfile).not.toHaveBeenCalled();
+  });
+
+  it("onIdleProfile failure does not affect onIdle completion", async () => {
+    const mockOnIdleProfile = vi.fn<(sessionID: string) => Promise<void>>(async () => {
+      throw new Error("Profile extraction failed");
+    });
+    const handler = createEventHandler({
+      needsReinjection,
+      onIdle: mockOnIdle,
+      onIdleProfile: mockOnIdleProfile,
+      config: makeConfig({ profileEnabled: true }),
+      logger,
+    });
+
+    await handler(makeEvent("session.idle", "ses_profile_3"));
+
+    expect(mockOnIdle).toHaveBeenCalledTimes(1);
+    expect(mockOnIdleProfile).toHaveBeenCalledTimes(1);
+    expect((logger.error as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+      "Profile extraction failed",
+      expect.objectContaining({ sessionID: "ses_profile_3" })
+    );
+  });
+
+  it("both onIdle and onIdleProfile are called on session.idle", async () => {
+    const mockOnIdleProfile = vi.fn<(sessionID: string) => Promise<void>>(async () => {});
+    const handler = createEventHandler({
+      needsReinjection,
+      onIdle: mockOnIdle,
+      onIdleProfile: mockOnIdleProfile,
+      config: makeConfig({ profileEnabled: true }),
+      logger,
+    });
+
+    await handler(makeEvent("session.idle", "ses_both_1"));
+
+    expect(mockOnIdle).toHaveBeenCalledTimes(1);
+    expect(mockOnIdleProfile).toHaveBeenCalledTimes(1);
   });
 });

@@ -4,12 +4,13 @@ import type { Logger } from "./logger.js";
 export function createEventHandler(options: {
   needsReinjection: Set<string>;
   onIdle: (sessionID: string) => Promise<void>;
+  onIdleProfile?: (sessionID: string) => Promise<void>;
   config: PluginConfig;
   logger: Logger;
 }): (input: {
   event: { type: string; properties: { sessionID: string } };
 }) => Promise<void> {
-  const { needsReinjection, onIdle, config, logger } = options;
+  const { needsReinjection, onIdle, onIdleProfile, config, logger } = options;
   const processing = new Map<string, boolean>();
 
   return async (input) => {
@@ -24,6 +25,17 @@ export function createEventHandler(options: {
         await onIdle(sessionID);
       } finally {
         processing.delete(sessionID);
+      }
+      // Profile extraction after onIdle completes
+      if (config.profileEnabled && onIdleProfile) {
+        try {
+          await onIdleProfile(sessionID);
+        } catch (error) {
+          logger.error("Profile extraction failed", {
+            sessionID,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     } else if (event.type === "session.compacted") {
       const { sessionID } = event.properties;
