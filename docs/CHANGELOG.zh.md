@@ -4,6 +4,28 @@ opencode-memory 项目的所有重要变更记录。
 
 ---
 
+## Phase 5 — AI 驱动的自动捕获与可配置 AI 提供商
+
+### 功能特性
+
+- **AI 驱动的自动捕获**：三种自动记忆提取模式：
+  - `heuristic`（默认）：不变的关键词评分 —— 现有用户零行为变更
+  - `ai`：完整 AI 提取 —— 将会话消息发送给 AI 进行智能结构化记忆提取
+  - `hybrid`：启发式预过滤 + AI —— 先对消息评分，仅将高重要性内容发送给 AI（节省 Token）
+- **可配置 AI 提供商**：支持独立的 OpenAI 兼容 AI 后端（OpenAI、DeepSeek、Ollama 等），通过 `aiApiUrl`、`aiApiKey`、`aiModel` 配置字段。未配置时回退到 OpenCode 内置 AI。
+- **密钥解析器**：API 密钥可使用 `file:///path/to/keyfile` 或 `env://VAR_NAME` 格式安全存储，适用于 `aiApiKey` 和 `embeddingApiKey`
+- **画像提取重构**：画像提取迁移到新的 `AiService` 抽象层以保持一致性
+
+### 技术详情
+
+- 新增配置字段：`autoCaptureMode`、`aiApiUrl`、`aiApiKey`、`aiModel`
+- 默认 `autoCaptureMode: "heuristic"` 确保现有用户零行为变更
+- AI 提取返回带内容 and 标签的结构化记忆
+- 优雅降级：AI 故障会被记录并跳过（无崩溃、无数据丢失）
+- 测试套件：420 通过 / 7 E2E 跳过 / 0 失败（Phase 4 为 367）
+
+---
+
 ## Phase 4 — 生产环境加固
 
 ### 功能特性
@@ -128,5 +150,6 @@ opencode-memory 项目的所有重要变更记录。
 | Phase 2 | 自动捕获、三层搜索、去重、隐私、国际化、钩子 |
 | Phase 3 | 用户画像、Web UI、画像注入、空闲提取 |
 | Phase 4 | 生产级日志、npm 发布、E2E 测试、文档 |
+| Phase 5 | AI 驱动自动捕获、可配置 AI 提供商、密钥解析器 |
 
-**最终状态**: 生产就绪的插件，367 个测试，完整的 TypeScript 支持，全面的文档。
+**最终状态**: 生产就绪的插件，420 个测试，完整的 TypeScript 支持，全面的文档。

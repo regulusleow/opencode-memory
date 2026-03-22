@@ -150,6 +150,22 @@ bun run build
   // 自动捕获的最小重要性分数（1-10）
   "autoCaptureMinImportance": 6,
 
+  // 自动捕获提取策略: "heuristic" | "ai" | "hybrid"
+  "autoCaptureMode": "heuristic",
+
+  // ============================================
+  // AI 提供商设置（用于 ai/hybrid 模式）
+  // ============================================
+
+  // OpenAI 兼容的聊天 API 端点（留空使用 OpenCode 内置 AI）
+  "aiApiUrl": "",
+
+  // API 密钥（支持纯文本、file:///路径、env://变量名）
+  "aiApiKey": "",
+
+  // AI 操作的模型名称（例如 "gpt-4o-mini", "deepseek-chat"）
+  "aiModel": "",
+
   // ============================================
   // 功能开关
   // ============================================
@@ -186,6 +202,123 @@ bun run build
   "logLevel": "info"
 }
 ```
+
+---
+
+## AI 提供商配置
+
+为 AI 驱动的自动捕获配置独立的 AI 后端。当 `aiApiUrl` 为空时，插件使用 OpenCode 的内置 AI。
+
+### 配置字段
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `aiApiUrl` | `""` | OpenAI 兼容的聊天 API 端点（例如 `https://api.openai.com/v1/chat/completions`）。留空使用 OpenCode 内置 AI。 |
+| `aiApiKey` | `""` | AI 后端的 API 密钥。支持密钥解析格式。 |
+| `aiModel` | `""` | AI 操作的模型名称（例如 `"gpt-4o-mini"`, `"deepseek-chat"`, `"llama3"`）。设置 `aiApiUrl` 时必填。 |
+| `autoCaptureMode` | `"heuristic"` | 自动捕获策略：`"heuristic"`、`"ai"` 或 `"hybrid"`。 |
+
+### 密钥解析格式
+
+`aiApiKey` 和 `embeddingApiKey` 都支持安全的密钥解析：
+
+```jsonc
+// 纯文本（不推荐用于共享配置）
+"aiApiKey": "sk-actual-key-here"
+
+// 从文件读取
+"aiApiKey": "file:///home/user/.secrets/openai-key.txt"
+
+// 从环境变量读取（推荐）
+"aiApiKey": "env://OPENAI_API_KEY"
+```
+
+### 提供商示例
+
+**场景：使用 OpenAI 进行 AI 提取：**
+
+```jsonc
+{
+  "autoCaptureMode": "hybrid",
+  "aiApiUrl": "https://api.openai.com/v1/chat/completions",
+  "aiApiKey": "sk-your-key",
+  "aiModel": "gpt-4o-mini"
+}
+```
+
+**场景：使用 DeepSeek（性价比高）：**
+
+```jsonc
+{
+  "autoCaptureMode": "hybrid",
+  "aiApiUrl": "https://api.deepseek.com/v1/chat/completions",
+  "aiApiKey": "env://DEEPSEEK_API_KEY",
+  "aiModel": "deepseek-chat"
+}
+```
+
+**场景：使用 Ollama（完全本地）：**
+
+```jsonc
+{
+  "autoCaptureMode": "ai",
+  "aiApiUrl": "http://localhost:11434/v1/chat/completions",
+  "aiApiKey": "ollama",
+  "aiModel": "llama3"
+}
+```
+
+---
+
+## 自动捕获模式
+
+`autoCaptureMode` 设置控制如何从对话中自动提取记忆：
+
+### heuristic（默认）
+
+基于关键词的重要性评分，范围 1-10。零 AI 调用。与现有行为完全向后兼容。
+
+```jsonc
+{
+  "autoCaptureMode": "heuristic",
+  "autoCaptureMinImportance": 6
+}
+```
+
+### ai
+
+纯 AI 提取。将所有会话消息发送给 AI 进行智能结构化记忆提取。需要配置 `aiApiUrl` 或使用 OpenCode 内置 AI。
+
+```jsonc
+{
+  "autoCaptureMode": "ai",
+  "aiApiUrl": "https://api.openai.com/v1/chat/completions",
+  "aiApiKey": "env://OPENAI_API_KEY",
+  "aiModel": "gpt-4o-mini"
+}
+```
+
+### hybrid
+
+启发式预过滤加 AI 提取。首先对消息进行重要性评分，然后仅将高分消息（高于 `autoCaptureMinImportance`）发送给 AI 进行结构化提取。相比纯 AI 模式节省 Token。
+
+```jsonc
+{
+  "autoCaptureMode": "hybrid",
+  "autoCaptureMinImportance": 6,
+  "aiApiUrl": "https://api.deepseek.com/v1/chat/completions",
+  "aiApiKey": "env://DEEPSEEK_API_KEY",
+  "aiModel": "deepseek-chat"
+}
+```
+
+### 模式对比
+
+| 模式 | AI 调用 | Token 消耗 | 提取质量 | 适用场景 |
+|------|---------|------------|----------|----------|
+| heuristic | 无 | 零 | 适合明显的关键词 | 成本敏感、离线环境 |
+| ai | 所有消息 | 高 | 适合细微的内容 | 最高质量要求 |
+| hybrid | 仅过滤后 | 中等 | 平衡 | 推荐默认 |
 
 ---
 

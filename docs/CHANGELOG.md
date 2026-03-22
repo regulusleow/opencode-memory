@@ -4,6 +4,28 @@ All notable changes to the opencode-memory project.
 
 ---
 
+## Phase 5 — AI-Powered Auto-Capture & Configurable AI Provider
+
+### Features
+
+- **AI-Powered Auto-Capture**: Three extraction modes for automatic memory extraction:
+  - `heuristic` (default): Unchanged keyword scoring — zero behavior change for existing users
+  - `ai`: Full AI extraction — sends session messages to AI for intelligent structured memory extraction
+  - `hybrid`: Heuristic pre-filter + AI — scores messages first, then sends only high-importance content to AI (token-efficient)
+- **Configurable AI Provider**: Support for independent OpenAI-compatible AI backends (OpenAI, DeepSeek, Ollama, etc.) via `aiApiUrl`, `aiApiKey`, `aiModel` config fields. Falls back to OpenCode's built-in AI when not configured.
+- **Secret Resolver**: API keys can be stored securely using `file:///path/to/keyfile` or `env://VAR_NAME` formats for both `aiApiKey` and `embeddingApiKey`
+- **Profile Extractor Refactor**: Profile extraction migrated to use the new `AiService` abstraction for consistency
+
+### Technical Details
+
+- New config fields: `autoCaptureMode`, `aiApiUrl`, `aiApiKey`, `aiModel`
+- Default `autoCaptureMode: "heuristic"` ensures zero behavior change for existing users
+- AI extraction returns structured memories with content and tags
+- Graceful degradation: AI failures are logged and skipped (no crashes, no data loss)
+- Test suite: 420 pass / 7 E2E skip / 0 fail (was 367 in Phase 4)
+
+---
+
 ## Phase 4 — Production Hardening
 
 ### Features
@@ -128,5 +150,6 @@ All notable changes to the opencode-memory project.
 | Phase 2 | Auto-capture, 3-layer search, deduplication, privacy, i18n, hooks |
 | Phase 3 | User profiles, Web UI, profile injection, idle extraction |
 | Phase 4 | Production logging, npm publish, E2E tests, documentation |
+| Phase 5 | AI-powered auto-capture, configurable AI provider, secret resolver |
 
-**Final State**: Production-ready plugin with 367 tests, full TypeScript support, and comprehensive documentation.
+**Final State**: Production-ready plugin with 420 tests, full TypeScript support, and comprehensive documentation.

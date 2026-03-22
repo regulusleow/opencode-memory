@@ -150,6 +150,22 @@ The file uses JSONC format, which supports comments.
   // Minimum importance score (1-10) for auto-capture
   "autoCaptureMinImportance": 6,
 
+  // Auto-capture extraction strategy: "heuristic" | "ai" | "hybrid"
+  "autoCaptureMode": "heuristic",
+
+  // ============================================
+  // AI Provider Settings (for ai/hybrid modes)
+  // ============================================
+
+  // OpenAI-compatible chat API endpoint (leave empty to use OpenCode's built-in AI)
+  "aiApiUrl": "",
+
+  // API key (supports plain string, file:///path, env://VAR_NAME)
+  "aiApiKey": "",
+
+  // Model name for AI operations (e.g., "gpt-4o-mini", "deepseek-chat")
+  "aiModel": "",
+
   // ============================================
   // Feature Toggles
   // ============================================
@@ -186,6 +202,123 @@ The file uses JSONC format, which supports comments.
   "logLevel": "info"
 }
 ```
+
+---
+
+## AI Provider Configuration
+
+Configure independent AI backends for AI-powered auto-capture. When `aiApiUrl` is empty, the plugin uses OpenCode's built-in AI.
+
+### Configuration Fields
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `aiApiUrl` | `""` | OpenAI-compatible chat API endpoint (e.g., `https://api.openai.com/v1/chat/completions`). Leave empty to use OpenCode's built-in AI. |
+| `aiApiKey` | `""` | API key for the AI backend. Supports secret resolution formats. |
+| `aiModel` | `""` | Model name for AI operations (e.g., `"gpt-4o-mini"`, `"deepseek-chat"`, `"llama3"`). Required when `aiApiUrl` is set. |
+| `autoCaptureMode` | `"heuristic"` | Auto-capture strategy: `"heuristic"`, `"ai"`, or `"hybrid"`. |
+
+### Secret Resolution Formats
+
+Both `aiApiKey` and `embeddingApiKey` support secure secret resolution:
+
+```jsonc
+// Plain string (not recommended for shared configs)
+"aiApiKey": "sk-actual-key-here"
+
+// Read from file
+"aiApiKey": "file:///home/user/.secrets/openai-key.txt"
+
+// Read from environment variable (recommended)
+"aiApiKey": "env://OPENAI_API_KEY"
+```
+
+### Provider Examples
+
+**Scenario: Use OpenAI for AI extraction:**
+
+```jsonc
+{
+  "autoCaptureMode": "hybrid",
+  "aiApiUrl": "https://api.openai.com/v1/chat/completions",
+  "aiApiKey": "sk-your-key",
+  "aiModel": "gpt-4o-mini"
+}
+```
+
+**Scenario: Use DeepSeek (cost-effective):**
+
+```jsonc
+{
+  "autoCaptureMode": "hybrid",
+  "aiApiUrl": "https://api.deepseek.com/v1/chat/completions",
+  "aiApiKey": "env://DEEPSEEK_API_KEY",
+  "aiModel": "deepseek-chat"
+}
+```
+
+**Scenario: Use Ollama (fully local):**
+
+```jsonc
+{
+  "autoCaptureMode": "ai",
+  "aiApiUrl": "http://localhost:11434/v1/chat/completions",
+  "aiApiKey": "ollama",
+  "aiModel": "llama3"
+}
+```
+
+---
+
+## Auto-Capture Modes
+
+The `autoCaptureMode` setting controls how memories are automatically extracted from conversations:
+
+### heuristic (default)
+
+Keyword-based importance scoring on a 1-10 scale. Zero AI calls. Fully backward compatible with existing behavior.
+
+```jsonc
+{
+  "autoCaptureMode": "heuristic",
+  "autoCaptureMinImportance": 6
+}
+```
+
+### ai
+
+Pure AI extraction. Sends all session messages to AI for intelligent structured memory extraction. Requires either `aiApiUrl` configured or uses OpenCode's built-in AI.
+
+```jsonc
+{
+  "autoCaptureMode": "ai",
+  "aiApiUrl": "https://api.openai.com/v1/chat/completions",
+  "aiApiKey": "env://OPENAI_API_KEY",
+  "aiModel": "gpt-4o-mini"
+}
+```
+
+### hybrid
+
+Heuristic pre-filter plus AI extraction. First scores messages by importance, then sends only high-scoring messages (above `autoCaptureMinImportance`) to AI for structured extraction. Saves tokens compared to pure AI mode.
+
+```jsonc
+{
+  "autoCaptureMode": "hybrid",
+  "autoCaptureMinImportance": 6,
+  "aiApiUrl": "https://api.deepseek.com/v1/chat/completions",
+  "aiApiKey": "env://DEEPSEEK_API_KEY",
+  "aiModel": "deepseek-chat"
+}
+```
+
+### Mode Comparison
+
+| Mode | AI Calls | Token Usage | Extraction Quality | Use Case |
+|------|----------|-------------|-------------------|----------|
+| heuristic | None | Zero | Good for obvious keywords | Cost-conscious, offline |
+| ai | All messages | High | Best for nuanced content | Maximum quality |
+| hybrid | Filtered only | Medium | Balanced | Recommended default |
 
 ---
 
