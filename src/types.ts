@@ -112,3 +112,23 @@ export interface MemoryStats {
   newest: number | null;
 }
 
+export interface ExportedMemory {
+  id: string;
+  content: string;
+  tags: string;
+  type: MemoryType;
+  metadata: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+  searchHitCount: number;
+  lastAccessedAt: number | null;
+}
+
+export interface ExportData {
+  schemaVersion: number;
+  embeddingModel: string;
+  exportedAt: string;
+  totalCount: number;
+  memories: ExportedMemory[];
+}
+

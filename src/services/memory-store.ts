@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { generateMemoryId } from "../config.js";
 import type { EmbeddingService } from "./embedding.js";
-import type { Memory, MemorySearchResult, PluginConfig, MemoryType, MemoryStats } from "../types.js";
+import type { Memory, MemorySearchResult, PluginConfig, MemoryType, MemoryStats, ExportData, ExportedMemory } from "../types.js";
 import type { VectorBackend } from "./vector-backend.js";
 import type { PrivacyFilter } from "./privacy.js";
 import type { DedupService } from "./dedup.js";
@@ -26,6 +26,7 @@ export interface MemoryStore {
   retryPendingEmbeddings(batchSize?: number): Promise<number>;
   getStats(): Promise<MemoryStats>;
   recordSearchHit(ids: string[]): Promise<void>;
+  exportAll(): Promise<ExportData>;
 }
 
 function rowToMemory(row: any): Memory {
@@ -402,6 +403,46 @@ export function createMemoryStore(
         } catch {
           // silently ignore update errors
         }
+      }
+    },
+
+    async exportAll(): Promise<ExportData> {
+      try {
+        const rows = db.query(
+          "SELECT id, content, tags, type, metadata, created_at, updated_at, search_hit_count, last_accessed_at FROM memories ORDER BY created_at ASC"
+        ).all() as Array<{
+          id: string; content: string; tags: string; type: string;
+          metadata: string; created_at: number; updated_at: number;
+          search_hit_count: number | null; last_accessed_at: number | null;
+        }>;
+
+        const memories: ExportedMemory[] = rows.map(row => ({
+          id: row.id,
+          content: row.content,
+          tags: row.tags,
+          type: row.type as MemoryType,
+          metadata: JSON.parse(row.metadata || "{}"),
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          searchHitCount: row.search_hit_count ?? 0,
+          lastAccessedAt: row.last_accessed_at ?? null,
+        }));
+
+        return {
+          schemaVersion: 1,
+          embeddingModel: config.embeddingModel,
+          exportedAt: new Date().toISOString(),
+          totalCount: memories.length,
+          memories,
+        };
+      } catch {
+        return {
+          schemaVersion: 1,
+          embeddingModel: config.embeddingModel,
+          exportedAt: new Date().toISOString(),
+          totalCount: 0,
+          memories: [],
+        };
       }
     },
   };

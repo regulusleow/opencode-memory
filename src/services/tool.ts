@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin";
 import type { MemoryStore } from "./memory-store.js";
-import type { PluginConfig, MemoryType, MemoryStats } from "../types.js";
+import type { PluginConfig, MemoryType, MemoryStats, ExportData } from "../types.js";
 import type { ProfileStore } from "./profile-store.js";
 import {
   formatMemoryContext,
@@ -58,7 +58,7 @@ export function createMemoryTool(
       "Manage and query project memory. Use 'search' with technical keywords/tags, 'add' to store knowledge, 'profile' to view/manage user profile.",
     args: {
       mode: tool.schema
-        .enum(["add", "search", "list", "forget", "help", "profile", "web", "stats"])
+        .enum(["add", "search", "list", "forget", "help", "profile", "web", "stats", "export"])
         .optional(),
       content: tool.schema.string().optional(),
       query: tool.schema.string().optional(),
@@ -70,7 +70,7 @@ export function createMemoryTool(
     },
     async execute(
       args: {
-        mode?: "add" | "search" | "list" | "forget" | "help" | "profile" | "web" | "stats";
+        mode?: "add" | "search" | "list" | "forget" | "help" | "profile" | "web" | "stats" | "export";
         content?: string;
         query?: string;
         tags?: string;
@@ -185,17 +185,22 @@ export function createMemoryTool(
             return `Web UI started at: ${url}`;
           }
 
-          case "stats": {
-            const stats = await (store as any).getStats();
-            return formatStats(stats);
-          }
+           case "stats": {
+             const stats = await (store as any).getStats();
+             return formatStats(stats);
+           }
 
-          default:
-            return `Unknown mode: ${mode}. Use help for usage.`;
-        }
-      } catch (error) {
-        return `Error: ${error instanceof Error ? error.message : String(error)}`;
-      }
-    },
-  });
-}
+           case "export": {
+             const exportData = await (store as any).exportAll();
+             return JSON.stringify(exportData);
+           }
+
+           default:
+             return `Unknown mode: ${mode}. Use help for usage.`;
+         }
+       } catch (error) {
+         return `Error: ${error instanceof Error ? error.message : String(error)}`;
+       }
+     },
+   });
+ }
