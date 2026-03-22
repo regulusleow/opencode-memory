@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { generateMemoryId } from "../config.js";
 import type { EmbeddingService } from "./embedding.js";
-import type { Memory, MemorySearchResult, PluginConfig, MemoryType } from "../types.js";
+import type { Memory, MemorySearchResult, PluginConfig, MemoryType, MemoryStats } from "../types.js";
 import type { VectorBackend } from "./vector-backend.js";
 import type { PrivacyFilter } from "./privacy.js";
 import type { DedupService } from "./dedup.js";
@@ -24,6 +24,8 @@ export interface MemoryStore {
   forget(memoryId: string): Promise<boolean>;
   get(memoryId: string): Promise<Memory | null>;
   retryPendingEmbeddings(batchSize?: number): Promise<number>;
+  getStats(): Promise<MemoryStats>;
+  recordSearchHit(ids: string[]): Promise<void>;
 }
 
 function rowToMemory(row: any): Memory {
@@ -44,6 +46,8 @@ function rowToMemory(row: any): Memory {
     embeddingStatus: row.embedding_status as "pending" | "done" | "failed",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    searchHitCount: (row as any).search_hit_count ?? 0,
+    lastAccessedAt: (row as any).last_accessed_at ?? undefined,
   };
 }
 
@@ -348,6 +352,56 @@ export function createMemoryStore(
         return embeddedCount;
       } catch {
         return 0;
+      }
+    },
+
+    async getStats(): Promise<MemoryStats> {
+      try {
+        const totalRow = db.query("SELECT COUNT(*) as total FROM memories").get() as { total: number };
+        const typeRows = db.query("SELECT type, COUNT(*) as count FROM memories GROUP BY type").all() as Array<{ type: string; count: number }>;
+        const statusRows = db.query("SELECT embedding_status, COUNT(*) as count FROM memories GROUP BY embedding_status").all() as Array<{ embedding_status: string; count: number }>;
+        const rangeRow = db.query("SELECT MIN(created_at) as oldest, MAX(created_at) as newest FROM memories").get() as { oldest: number | null; newest: number | null };
+
+        const byType: Record<string, number> = {};
+        for (const row of typeRows) {
+          byType[row.type] = row.count;
+        }
+
+        const byEmbeddingStatus: Record<string, number> = {};
+        for (const row of statusRows) {
+          byEmbeddingStatus[row.embedding_status] = row.count;
+        }
+
+        return {
+          total: totalRow.total,
+          byType,
+          byEmbeddingStatus,
+          oldest: rangeRow.oldest ?? null,
+          newest: rangeRow.newest ?? null,
+        };
+      } catch {
+        return {
+          total: 0,
+          byType: {},
+          byEmbeddingStatus: {},
+          oldest: null,
+          newest: null,
+        };
+      }
+    },
+
+    async recordSearchHit(ids: string[]): Promise<void> {
+      if (ids.length === 0) {
+        return;
+      }
+
+      const now = Date.now();
+      for (const id of ids) {
+        try {
+          db.query("UPDATE memories SET search_hit_count = search_hit_count + 1, last_accessed_at = ? WHERE id = ?").run(now, id);
+        } catch {
+          // silently ignore update errors
+        }
       }
     },
   };

@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin";
 import type { MemoryStore } from "./memory-store.js";
-import type { PluginConfig, MemoryType } from "../types.js";
+import type { PluginConfig, MemoryType, MemoryStats } from "../types.js";
 import type { ProfileStore } from "./profile-store.js";
 import {
   formatMemoryContext,
@@ -19,6 +19,35 @@ export interface MemoryToolOptions {
   onWebStart?: () => string;
 }
 
+function formatStats(stats: MemoryStats): string {
+  const lines = [
+    `Memory Stats:`,
+    `  Total: ${stats.total}`,
+    `  By Type:`,
+    ...Object.entries(stats.byType).map(([type, count]) => `    ${type}: ${count}`),
+    `  By Status:`,
+    ...Object.entries(stats.byEmbeddingStatus).map(([status, count]) => `    ${status}: ${count}`),
+  ];
+  
+  if (stats.oldest !== null && stats.oldest !== undefined) {
+    const oldestVal = stats.oldest as any;
+    const oldestTime = typeof oldestVal === 'number' ? oldestVal : (oldestVal.createdAt ?? oldestVal);
+    if (oldestTime) {
+      lines.push(`  Oldest: ${new Date(oldestTime).toISOString()}`);
+    }
+  }
+  
+  if (stats.newest !== null && stats.newest !== undefined) {
+    const newestVal = stats.newest as any;
+    const newestTime = typeof newestVal === 'number' ? newestVal : (newestVal.createdAt ?? newestVal);
+    if (newestTime) {
+      lines.push(`  Newest: ${new Date(newestTime).toISOString()}`);
+    }
+  }
+  
+  return lines.join("\n");
+}
+
 export function createMemoryTool(
   store: MemoryStore,
   config: PluginConfig,
@@ -29,7 +58,7 @@ export function createMemoryTool(
       "Manage and query project memory. Use 'search' with technical keywords/tags, 'add' to store knowledge, 'profile' to view/manage user profile.",
     args: {
       mode: tool.schema
-        .enum(["add", "search", "list", "forget", "help", "profile", "web"])
+        .enum(["add", "search", "list", "forget", "help", "profile", "web", "stats"])
         .optional(),
       content: tool.schema.string().optional(),
       query: tool.schema.string().optional(),
@@ -41,7 +70,7 @@ export function createMemoryTool(
     },
     async execute(
       args: {
-        mode?: "add" | "search" | "list" | "forget" | "help" | "profile" | "web";
+        mode?: "add" | "search" | "list" | "forget" | "help" | "profile" | "web" | "stats";
         content?: string;
         query?: string;
         tags?: string;
@@ -63,6 +92,12 @@ export function createMemoryTool(
             if (!args.content) {
               return "Error: content is required for add mode.";
             }
+            
+            const VALID_TYPES = ["general", "decision", "preference", "lesson", "code-pattern", "bug-fix", "auto"] as const;
+            if (args.type && !VALID_TYPES.includes(args.type as any)) {
+              return `Error: invalid type '${args.type}'. Valid types: ${VALID_TYPES.join(", ")}`;
+            }
+            
             const memory = await store.add(args.content, {
               tags: args.tags,
               type: (args.type as MemoryType | undefined) || "general",
@@ -75,6 +110,10 @@ export function createMemoryTool(
               return "Error: query is required for search mode.";
             }
             const results = await store.search(args.query, args.limit);
+            const ids = results.map(m => m.id);
+            if (ids.length > 0) {
+              await (store as any).recordSearchHit(ids);
+            }
             return formatMemoryContext(results, "search");
           }
 
@@ -144,6 +183,11 @@ export function createMemoryTool(
             }
             const url = onWebStart();
             return `Web UI started at: ${url}`;
+          }
+
+          case "stats": {
+            const stats = await (store as any).getStats();
+            return formatStats(stats);
           }
 
           default:

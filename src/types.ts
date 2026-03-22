@@ -104,3 +104,11 @@ export interface AiService {
   isConfigured(): boolean;
 }
 
+export interface MemoryStats {
+  total: number;
+  byType: Record<string, number>;
+  byEmbeddingStatus: Record<string, number>;
+  oldest: number | null;
+  newest: number | null;
+}
+
