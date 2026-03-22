@@ -63,13 +63,16 @@ describe("Test Helpers", () => {
   it("makeMockStore() returns an object with all MemoryStore methods", () => {
     const store = makeMockStore();
 
-    // Check all 6 MemoryStore methods exist as functions
     expect(typeof store.add).toBe("function");
     expect(typeof store.search).toBe("function");
     expect(typeof store.list).toBe("function");
     expect(typeof store.forget).toBe("function");
     expect(typeof store.get).toBe("function");
     expect(typeof store.retryPendingEmbeddings).toBe("function");
+    expect(typeof (store as any).exportAll).toBe("function");
+    expect(typeof (store as any).importMemories).toBe("function");
+    expect(typeof (store as any).getStats).toBe("function");
+    expect(typeof (store as any).recordSearchHit).toBe("function");
   });
 
   it("makeMockStore with search override returns custom results", async () => {

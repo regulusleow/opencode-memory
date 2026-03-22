@@ -41,7 +41,7 @@ export function makeConfig(overrides?: Partial<PluginConfig>): PluginConfig {
 }
 
 /**
- * Create a mock MemoryStore with all 6 methods.
+ * Create a mock MemoryStore with all 10 methods.
  * Merges provided overrides into the defaults.
  */
 export function makeMockStore(overrides?: Partial<MemoryStore>): MemoryStore {
@@ -63,7 +63,12 @@ export function makeMockStore(overrides?: Partial<MemoryStore>): MemoryStore {
     forget: mock(() => Promise.resolve(false)),
     get: mock(() => Promise.resolve(null)),
     retryPendingEmbeddings: mock(() => Promise.resolve(0)),
-  };
+  } as any;
+
+  (defaults as any).exportAll = mock(() => Promise.resolve({ schemaVersion: 1, embeddingModel: "test", exportedAt: new Date().toISOString(), totalCount: 0, memories: [] }));
+  (defaults as any).importMemories = mock(() => Promise.resolve({ imported: 0, skipped: 0 }));
+  (defaults as any).getStats = mock(() => Promise.resolve({ total: 0, byType: {} as Record<string, number>, byEmbeddingStatus: {} as Record<string, number>, oldest: null, newest: null }));
+  (defaults as any).recordSearchHit = mock(() => Promise.resolve());
 
   return {
     ...defaults,
@@ -124,6 +129,7 @@ export function makeTestMemory(overrides?: Partial<Memory>): Memory {
     embeddingStatus: "done",
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    searchHitCount: 0,
   };
 
   return {
