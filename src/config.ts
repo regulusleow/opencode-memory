@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "os";
 import { join } from "path";
 import type { PluginConfig } from "./types.js";
+import { resolveSecret } from "./services/secret-resolver.js";
 
 const CONFIG_PATH = [".config", "opencode", "opencode-memory.jsonc"];
 
@@ -29,6 +30,10 @@ interface RawPluginConfig {
   profileMaxMessagesPerExtraction?: unknown;
   webServerPort?: unknown;
   logLevel?: unknown;
+  aiApiUrl?: unknown;
+  aiApiKey?: unknown;
+  aiModel?: unknown;
+  autoCaptureMode?: unknown;
 }
 
 function getConfigFilePath(): string {
@@ -171,6 +176,10 @@ function getDefaultConfig(): PluginConfig {
     profileMaxMessagesPerExtraction: 20,
     webServerPort: 18080,
     logLevel: "info" as const,
+    aiApiUrl: "",
+    aiApiKey: "",
+    aiModel: "",
+    autoCaptureMode: "heuristic" as const,
   };
 }
 
@@ -207,15 +216,21 @@ export function getConfig(projectPath: string): PluginConfig {
     ? (raw.logLevel as (typeof validLogLevels)[number])
     : defaults.logLevel;
 
+  const validAutoCaptureMode = ["heuristic", "ai", "hybrid"] as const;
+  const autoCaptureMode = (validAutoCaptureMode as readonly string[]).includes(raw.autoCaptureMode as string)
+    ? (raw.autoCaptureMode as "heuristic" | "ai" | "hybrid")
+    : defaults.autoCaptureMode;
+
   return {
     embeddingApiUrl:
       typeof raw.embeddingApiUrl === "string"
         ? raw.embeddingApiUrl
         : defaults.embeddingApiUrl,
-    embeddingApiKey:
+    embeddingApiKey: resolveSecret(
       typeof raw.embeddingApiKey === "string"
         ? raw.embeddingApiKey
-        : defaults.embeddingApiKey,
+        : defaults.embeddingApiKey
+    ),
     embeddingModel,
     embeddingDimensions,
     storagePath,
@@ -272,6 +287,18 @@ export function getConfig(projectPath: string): PluginConfig {
         ? raw.webServerPort
         : defaults.webServerPort,
     logLevel,
+    aiApiUrl:
+      typeof raw.aiApiUrl === "string"
+        ? raw.aiApiUrl
+        : defaults.aiApiUrl,
+    aiApiKey: resolveSecret(
+      typeof raw.aiApiKey === "string" ? raw.aiApiKey : defaults.aiApiKey
+    ),
+    aiModel:
+      typeof raw.aiModel === "string"
+        ? raw.aiModel
+        : defaults.aiModel,
+    autoCaptureMode,
   };
 }
 

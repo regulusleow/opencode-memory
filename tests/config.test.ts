@@ -502,7 +502,7 @@ describe("config module", () => {
 
     it("config with valid logLevel 'warn' is accepted", () => {
       writeConfigFile(`{
-  "logLevel": "warn"
+   "logLevel": "warn"
 }`);
       const config = getConfig("/test/project");
       expect(config.logLevel).toBe("warn");
@@ -510,10 +510,74 @@ describe("config module", () => {
 
     it("config with invalid logLevel falls back to 'info'", () => {
       writeConfigFile(`{
-  "logLevel": "invalid"
+   "logLevel": "invalid"
 }`);
       const config = getConfig("/test/project");
       expect(config.logLevel).toBe("info");
+    });
+  });
+
+  describe("Phase 5 AI config fields", () => {
+    it("default config has aiApiUrl as empty string", () => {
+      const config = getConfig("/test/project");
+      expect(config.aiApiUrl).toBe("");
+    });
+
+    it("default config has aiApiKey as empty string", () => {
+      const config = getConfig("/test/project");
+      expect(config.aiApiKey).toBe("");
+    });
+
+    it("default config has aiModel as empty string", () => {
+      const config = getConfig("/test/project");
+      expect(config.aiModel).toBe("");
+    });
+
+    it("default config has autoCaptureMode as 'heuristic'", () => {
+      const config = getConfig("/test/project");
+      expect(config.autoCaptureMode).toBe("heuristic");
+    });
+
+    it("custom config with autoCaptureMode 'ai' is accepted", () => {
+      writeConfigFile(`{
+   "autoCaptureMode": "ai"
+}`);
+      const config = getConfig("/test/project");
+      expect(config.autoCaptureMode).toBe("ai");
+    });
+
+    it("custom config with autoCaptureMode 'hybrid' is accepted", () => {
+      writeConfigFile(`{
+   "autoCaptureMode": "hybrid"
+}`);
+      const config = getConfig("/test/project");
+      expect(config.autoCaptureMode).toBe("hybrid");
+    });
+
+    it("invalid autoCaptureMode falls back to 'heuristic'", () => {
+      writeConfigFile(`{
+   "autoCaptureMode": "invalid"
+}`);
+      const config = getConfig("/test/project");
+      expect(config.autoCaptureMode).toBe("heuristic");
+    });
+
+    it("aiApiKey with env:// prefix resolves environment variable", () => {
+      process.env.TEST_OPENCODE_MEMORY_AI_KEY = "sk-test-key-from-env";
+      writeConfigFile(`{
+   "aiApiKey": "env://TEST_OPENCODE_MEMORY_AI_KEY"
+}`);
+      const config = getConfig("/test/project");
+      expect(config.aiApiKey).toBe("sk-test-key-from-env");
+      delete process.env.TEST_OPENCODE_MEMORY_AI_KEY;
+    });
+
+    it("plain aiApiKey is passed through unchanged", () => {
+      writeConfigFile(`{
+   "aiApiKey": "sk-abc123"
+}`);
+      const config = getConfig("/test/project");
+      expect(config.aiApiKey).toBe("sk-abc123");
     });
   });
 });
