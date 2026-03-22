@@ -203,12 +203,12 @@ describe("createMemoryTool", () => {
     const store = makeMockStore();
     const toolDef = createMemoryTool(store, makeConfig({ searchLimit: 5, contextLimit: 3 }));
     await (toolDef as any).execute(
-      { mode: "add", content: "tagged memory", tags: "a,b", type: "note" },
+      { mode: "add", content: "tagged memory", tags: "a,b", type: "decision" },
       { sessionID: "ses_test" }
     );
     expect(store.add).toHaveBeenCalledWith("tagged memory", {
       tags: "a,b",
-      type: "note",
+      type: "decision",
     });
   });
 
