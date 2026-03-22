@@ -122,10 +122,20 @@ describe("Web Server", () => {
 
   describe("GET /api/stats", () => {
     test("returns 200 with stats JSON", async () => {
+      (store.getStats as any).mockImplementation(() => Promise.resolve({
+        total: 1,
+        byType: { general: 1 },
+        byEmbeddingStatus: { done: 1 },
+        oldest: Date.now(),
+        newest: Date.now(),
+      }));
+
       const res = await fetch(`${baseUrl}/api/stats`);
       expect(res.status).toBe(200);
-      const data = (await res.json()) as { total: number };
+      const data = (await res.json()) as any;
       expect(typeof data.total).toBe("number");
+      expect(typeof data.byType).toBe("object");
+      expect(typeof data.byEmbeddingStatus).toBe("object");
     });
   });
 
@@ -139,7 +149,7 @@ describe("Web Server", () => {
     });
   });
 
-   describe("GET /api/profile when no profile", () => {
+  describe("GET /api/profile when no profile", () => {
     test("returns 200 with null when no profile exists", async () => {
       const emptyProfileStore = makeMockProfileStore();
       const server2 = createWebServer({
@@ -157,6 +167,121 @@ describe("Web Server", () => {
       } finally {
         server2.stop();
       }
+    });
+  });
+
+  describe("GET /api/export", () => {
+    test("returns 200 with export data containing schemaVersion", async () => {
+      (store.exportAll as any).mockImplementation(async () => ({
+        schemaVersion: 1,
+        embeddingModel: "test-model",
+        exportedAt: new Date().toISOString(),
+        totalCount: 1,
+        memories: [{
+          id: "mem-1",
+          content: "Test content",
+          tags: "test",
+          type: "general",
+          metadata: {},
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          searchHitCount: 0,
+          lastAccessedAt: null,
+        }],
+      }));
+
+      const res = await fetch(`${baseUrl}/api/export`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body.schemaVersion).toBe(1);
+      expect(body.embeddingModel).toBe("test-model");
+      expect(Array.isArray(body.memories)).toBe(true);
+      expect(body.totalCount).toBe(1);
+    });
+
+    test("returns CORS headers", async () => {
+      const res = await fetch(`${baseUrl}/api/export`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    });
+  });
+
+  describe("POST /api/import", () => {
+    test("returns 200 with imported and skipped counts on valid data", async () => {
+      (store.importMemories as any).mockImplementation(async (data: any) => ({
+        imported: data.memories.length,
+        skipped: 0,
+      }));
+
+      const importData = {
+        schemaVersion: 1,
+        embeddingModel: "test",
+        exportedAt: new Date().toISOString(),
+        totalCount: 1,
+        memories: [{
+          id: "mem-1",
+          content: "Test",
+          tags: "test",
+          type: "general" as const,
+          metadata: {},
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          searchHitCount: 0,
+          lastAccessedAt: null,
+        }],
+      };
+
+      const res = await fetch(`${baseUrl}/api/import`, {
+        method: "POST",
+        body: JSON.stringify(importData),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body.imported).toBe(1);
+      expect(body.skipped).toBe(0);
+    });
+
+    test("returns 400 on invalid JSON", async () => {
+      const res = await fetch(`${baseUrl}/api/import`, {
+        method: "POST",
+        body: "invalid json {",
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error).toContain("invalid JSON");
+    });
+
+    test("returns 400 when schemaVersion is missing", async () => {
+      const res = await fetch(`${baseUrl}/api/import`, {
+        method: "POST",
+        body: JSON.stringify({
+          embeddingModel: "test",
+          memories: [],
+        }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as any;
+      expect(body.error).toContain("schemaVersion");
+    });
+
+    test("returns CORS headers", async () => {
+      (store.importMemories as any).mockImplementation(async () => ({
+        imported: 0,
+        skipped: 0,
+      }));
+
+      const res = await fetch(`${baseUrl}/api/import`, {
+        method: "POST",
+        body: JSON.stringify({
+          schemaVersion: 1,
+          embeddingModel: "test",
+          exportedAt: new Date().toISOString(),
+          totalCount: 0,
+          memories: [],
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("access-control-allow-origin")).toBe("*");
     });
   });
 

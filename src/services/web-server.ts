@@ -1,6 +1,6 @@
 import type { MemoryStore } from "./memory-store.js";
 import type { ProfileStore } from "./profile-store.js";
-import type { PluginConfig } from "../types.js";
+import type { PluginConfig, ExportData } from "../types.js";
 import type { Logger } from "./logger.js";
 
 interface WebServerOptions {
@@ -74,9 +74,31 @@ export function createWebServer(options: WebServerOptions): WebServer {
         return jsonResponse({ success: true });
       }
 
+      if (method === "GET" && pathname === "/api/export") {
+        const exportData = await store.exportAll();
+        return jsonResponse(exportData);
+      }
+
+      if (method === "POST" && pathname === "/api/import") {
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return jsonResponse({ error: "invalid JSON" }, 400);
+        }
+
+        // Basic validation: must have schemaVersion
+        if (!body || typeof body !== "object" || !("schemaVersion" in body)) {
+          return jsonResponse({ error: "invalid import data: missing schemaVersion" }, 400);
+        }
+
+        const result = await store.importMemories(body as ExportData);
+        return jsonResponse(result);
+      }
+
       if (method === "GET" && pathname === "/api/stats") {
-        const all = await store.list();
-        return jsonResponse({ total: all.length });
+        const stats = await store.getStats();
+        return jsonResponse(stats);
       }
 
       if (method === "GET" && pathname === "/api/profile") {
