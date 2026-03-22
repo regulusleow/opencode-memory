@@ -7,6 +7,7 @@ import { createApiEmbeddingBackend } from "./services/embedding.js";
 import { createLocalEmbeddingBackend } from "./services/local-embedding.js";
 import { detectDimensionMismatch, freshStartMigration } from "./services/migration.js";
 import { runMigrations } from "./services/migration-runner.js";
+import { memoryMigrations } from "./services/migrations.js";
 import { createMemoryStore } from "./services/memory-store.js";
 import { createVectorBackend } from "./services/vector-backend.js";
 import { createMemoryTool } from "./services/tool.js";
@@ -47,7 +48,7 @@ export const plugin: Plugin = async (ctx: PluginInput) => {
 
     const db = createDatabase(dbPath, resolvedDimensions);
 
-    runMigrations(db, [], logger);
+    runMigrations(db, memoryMigrations, logger);
 
     const meta = getEmbeddingMeta(db);
     if (meta.modelName === null) {
