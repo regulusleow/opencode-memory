@@ -1,103 +1,212 @@
 # opencode-memory
 
-为 [OpenCode](https://opencode.ai) 提供跨会话持久化记忆能力的插件。
+[OpenCode](https://opencode.ai) 的记忆插件，自动捕获对话中的重要信息，使用语义搜索进行存储，并在未来的会话中注入相关上下文。
 
-## 是什么
+## 这是什么
 
-OpenCode 默认不保留历史会话的记忆——每次对话都从零开始。`opencode-memory` 通过插件机制为 AI 注入持久记忆，让它记住你的项目背景、技术决策、踩过的坑，以及任何你认为值得保留的知识。
-
-记忆存储在本地 SQLite 数据库中，使用 [sqlite-vec](https://github.com/asg017/sqlite-vec) 提供向量相似度搜索，通过 OpenAI 兼容的 Embedding API 将文本转换为向量。每个项目有独立的存储空间（按项目路径哈希隔离），互不干扰。
-
-## 核心能力
-
-- **跨会话记忆** — 记忆写入后永久保留，下次打开 OpenCode 仍然可用
-- **语义搜索** — 基于向量相似度检索相关记忆，而非关键词匹配
-- **自动注入上下文** — 每次会话开始时，通过 `chat.message` hook 自动将相关记忆注入 AI 上下文
-- **项目隔离** — 不同项目的记忆完全隔离，不会互相污染
-- **懒加载 Embedding** — Embedding 失败不阻塞写入，后台自动重试
-
-## 架构
-
-```
-src/
-├── plugin.ts           # 插件入口，组装各模块
-├── config.ts           # 配置读取（支持环境变量覆盖）
-├── types.ts            # 类型定义
-└── services/
-    ├── database.ts     # SQLite + sqlite-vec 初始化
-    ├── embedding.ts    # OpenAI 兼容 Embedding API 客户端
-    ├── memory-store.ts # 记忆 CRUD + 向量搜索
-    ├── context.ts      # 上下文格式化
-    ├── tool.ts         # memory 工具定义
-    └── hooks.ts        # chat.message hook
-```
-
-记忆数据库存储在 `~/.opencode-memory/<project-hash>/memory.db`。
+- **自动捕获**：使用关键词启发式、AI 驱动提取或两者混合，自动从对话中提取并存储重要决策、经验和偏好
+- **语义搜索**：使用向量 Embedding 按含义查找记忆，而不仅仅是关键词匹配
+- **上下文注入**：在每个会话开始时自动展示相关的历史记忆
+- **用户画像**：跨会话学习你的偏好、模式和工作流
+- **去重**：通过可配置的相似度阈值防止重复记忆
+- **隐私过滤**：从自动捕获中排除敏感模式
+- **Web 界面**：基于浏览器的界面，用于浏览、搜索和管理记忆
 
 ## 安装
 
-### 前置要求
+```bash
+cd ~/.config/opencode
+bun add opencode-memory
+```
 
-- [Bun](https://bun.sh) >= 1.0
-- 支持 `text-embedding-3-small` 的 OpenAI 兼容 Embedding API
+然后在 `~/.config/opencode/opencode.jsonc` 中注册插件：
 
-### 构建
+```json
+{
+  "plugins": [
+    "opencode-memory"
+  ]
+}
+```
+
+## 配置
+
+创建 `~/.config/opencode/opencode-memory.jsonc`：
+
+```jsonc
+{
+  // 自动捕获策略："heuristic"（默认）、"ai" 或 "hybrid"
+  "autoCaptureMode": "heuristic",
+  "autoCaptureEnabled": true,
+  "autoCaptureDelay": 10000,
+  "autoCaptureMinImportance": 6,
+
+  // AI 提供商配置，用于 ai/hybrid 捕获模式（留空则使用 OpenCode 内置 AI）
+  "aiApiUrl": "",
+  "aiApiKey": "",
+  "aiModel": "",
+
+  // Embedding 后端："auto"（默认）、"api" 或 "local"
+  "embeddingBackend": "auto",
+  "embeddingApiUrl": "https://api.openai.com/v1/embeddings",
+  "embeddingApiKey": "",
+  "embeddingModel": "text-embedding-3-small",
+  "embeddingDimensions": 1536,
+
+  // 本地 Embedding（当 embeddingBackend 为 "local" 时使用）
+  "localModel": "nomic-ai/nomic-embed-text-v1.5",
+  "localDtype": "q8",
+  "localCacheDir": "~/.opencode-memory/models",
+
+  // 存储和搜索
+  "storagePath": "~/.opencode-memory",
+  "searchLimit": 5,
+  "contextLimit": 3,
+
+  // 隐私和去重
+  "privacyPatterns": [],
+  "dedupSimilarityThreshold": 0.7,
+
+  // 用户画像
+  "profileEnabled": true,
+  "profileExtractionMinPrompts": 5,
+  "profileMaxMessagesPerExtraction": 20,
+
+  // Web UI
+  "webServerPort": 18080,
+
+  // 日志级别："debug"、"info"、"warn"、"error" 或 "silent"
+  "logLevel": "info"
+}
+```
+
+## 自动捕获模式
+
+`autoCaptureMode` 设置控制如何从对话中提取记忆：
+
+| 模式 | 工作原理 | AI 调用 | 适用场景 |
+|------|---------|---------|----------|
+| `heuristic` | 基于关键词的重要性评分 | 无 | 注重成本、离线使用 |
+| `ai` | 将所有消息发送给 AI 进行结构化提取 | 所有消息 | 追求最高质量 |
+| `hybrid` | 启发式预过滤，仅对符合条件的消息进行 AI 处理 | 仅过滤后的消息 | 平衡方案（推荐） |
+
+### 使用 AI 模式
+
+默认情况下，`ai` 和 `hybrid` 模式使用 OpenCode 内置的 AI，无需额外配置。
+
+如需使用更便宜或更快的独立模型：
+
+**OpenAI：**
+```jsonc
+{
+  "autoCaptureMode": "hybrid",
+  "aiApiUrl": "https://api.openai.com/v1/chat/completions",
+  "aiApiKey": "env://OPENAI_API_KEY",
+  "aiModel": "gpt-4o-mini"
+}
+```
+
+**DeepSeek（性价比高）：**
+```jsonc
+{
+  "autoCaptureMode": "hybrid",
+  "aiApiUrl": "https://api.deepseek.com/v1/chat/completions",
+  "aiApiKey": "env://DEEPSEEK_API_KEY",
+  "aiModel": "deepseek-chat"
+}
+```
+
+**Ollama（完全本地）：**
+```jsonc
+{
+  "autoCaptureMode": "ai",
+  "aiApiUrl": "http://localhost:11434/v1/chat/completions",
+  "aiApiKey": "ollama",
+  "aiModel": "llama3"
+}
+```
+
+支持任何 OpenAI 兼容的 API 端点（OpenAI、DeepSeek、Ollama、Anthropic 代理等）。
+
+### API Key 格式
+
+`aiApiKey` 和 `embeddingApiKey` 字段支持安全的密钥解析：
+
+```jsonc
+"aiApiKey": "sk-actual-key"           // 纯文本字符串
+"aiApiKey": "env://OPENAI_API_KEY"    // 从环境变量读取
+"aiApiKey": "file:///path/to/key.txt" // 从文件读取
+```
+
+## Embedding 后端
+
+| 后端 | 说明 |
+|------|------|
+| `auto`（默认） | 未设置 API Key 时使用本地模型，否则使用 API |
+| `api` | OpenAI 兼容的 Embedding API |
+| `local` | HuggingFace Transformers 模型，完全离线运行 |
+
+### 支持的本地模型
+
+| 模型 | 维度 |
+|------|------|
+| `nomic-ai/nomic-embed-text-v1.5` | 768（默认） |
+| `nomic-ai/nomic-embed-text-v1` | 768 |
+| `Xenova/all-MiniLM-L6-v2` | 384 |
+| `BAAI/bge-small-en-v1.5` | 384 |
+| `BAAI/bge-base-en-v1.5` | 768 |
+| `BAAI/bge-large-en-v1.5` | 1024 |
+| `text-embedding-3-small` | 1536 |
+| `text-embedding-3-large` | 3072 |
+
+本地模型首次使用时会自动从 HuggingFace 下载。
+
+## 工具模式
+
+通过对话中的 `memory` 工具与你的记忆存储交互：
+
+| 模式 | 说明 |
+|------|------|
+| `add` | 存储新知识，可选标签和类型 |
+| `search` | 通过语义查询查找记忆 |
+| `list` | 显示所有存储的记忆 |
+| `forget` | 通过 ID 删除特定记忆 |
+| `profile` | 查看或管理用户画像数据 |
+| `web` | 启动 Web 界面 |
+| `help` | 显示使用信息 |
+
+## 用户画像
+
+插件会在跨会话中了解你，以提供更个性化的帮助：
+
+- 在会话空闲事件时自动触发
+- 分析对话历史以识别偏好、模式和工作流
+- 以置信度分数存储学习结果
+
+画像操作（`mode: profile`）：`show`、`analyze`、`delete`、`reset`
+
+如需禁用：设置 `profileEnabled: false`。
+
+## Web 界面
+
+用于管理记忆的基于浏览器的界面：
+
+- **URL**：`http://localhost:18080`（默认端口，可配置）
+- 浏览、搜索和删除记忆
+- 查看记忆统计信息和用户画像数据
+- 通过 `mode: web` 按需启动
+
+## 开发
 
 ```bash
+git clone https://github.com/regulusleow/opencode-memory.git
+cd opencode-memory
 bun install
-bun run build
-```
-
-### 环境变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `OPENCODE_MEMORY_EMBEDDING_API_URL` | `https://api.openai.com/v1/embeddings` | Embedding API 地址 |
-| `OPENCODE_MEMORY_EMBEDDING_API_KEY` | （空） | API Key |
-| `OPENCODE_MEMORY_EMBEDDING_MODEL` | `text-embedding-3-small` | 模型名称 |
-| `OPENCODE_MEMORY_EMBEDDING_DIMENSIONS` | `1536` | 向量维度 |
-| `OPENCODE_MEMORY_STORAGE_PATH` | `~/.opencode-memory` | 数据库根目录 |
-| `OPENCODE_MEMORY_SEARCH_LIMIT` | `5` | 搜索返回最大条数 |
-| `OPENCODE_MEMORY_CONTEXT_LIMIT` | `3` | 自动注入上下文最大条数 |
-
-### 在 OpenCode 中启用
-
-在 OpenCode 配置中添加本插件路径，指向构建产物 `dist/index.js`。
-
-## 使用
-
-插件注册了一个 `memory` 工具，AI 可以直接调用：
-
-```
-memory(mode="add", content="项目使用 bun 而非 node，不要生成 package-lock.json", tags="toolchain")
-memory(mode="search", query="数据库连接方式")
-memory(mode="list")
-memory(mode="forget", memoryId="mem_xxx")
-memory(mode="help")
-```
-
-## 测试
-
-```bash
-bun test        # 运行全部测试（81 个）
+bun test        # 运行测试
+bun run build   # 构建 dist/
 bun run typecheck
 ```
 
-## 当前状态
+## 许可证
 
-Phase 1 已完成：
-
-- [x] SQLite + sqlite-vec 向量数据库
-- [x] OpenAI 兼容 Embedding 客户端（懒加载，失败重试）
-- [x] 记忆 CRUD：add / search / list / forget
-- [x] `chat.message` hook：会话开始时自动注入相关记忆
-- [x] `memory` 工具：AI 可主动读写记忆
-- [x] 按项目路径隔离存储
-- [x] 81/81 测试通过，类型检查干净，构建成功
-
-## 致谢
-
-受以下项目的启发：
-
-- [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem) — 为 Claude Code 提供持久化记忆的参考实现
-- [tickernelz/opencode-mem](https://github.com/tickernelz/opencode-mem) — OpenCode 记忆插件的早期探索
+MIT

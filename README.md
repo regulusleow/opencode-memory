@@ -1,27 +1,25 @@
 # opencode-memory
 
-Memory plugin for OpenCode with semantic search, auto-capture, user profiling, and web UI.
+A memory plugin for [OpenCode](https://opencode.ai) that automatically captures important information from your conversations, stores it with semantic search, and injects relevant context back into future sessions.
 
-## Features
+## What It Does
 
-- **Semantic Search**: Find memories by meaning, not just keywords, using vector embeddings
-- **Multiple Embedding Backends**: Choose between OpenAI API, local models, or auto-detection
-- **Auto-Capture**: Automatically extract and store important information from conversations
-- **Duplicate Detection**: Prevent redundant memories with configurable similarity threshold
-- **Privacy Filtering**: Exclude sensitive patterns from automatic capture
-- **Multi-Layer Search**: Enhanced search with multiple retrieval strategies
-- **User Profiling**: Learn user preferences, patterns, and workflows across sessions
+- **Auto-Capture**: Automatically extracts and stores important decisions, lessons, and preferences from conversations — using keyword heuristics, AI-powered extraction, or a hybrid of both
+- **Semantic Search**: Finds memories by meaning using vector embeddings, not just keyword matching
+- **Context Injection**: Automatically surfaces relevant past memories at the start of each session
+- **User Profiling**: Learns your preferences, patterns, and workflows across sessions
+- **Duplicate Detection**: Prevents redundant memories with configurable similarity threshold
+- **Privacy Filtering**: Excludes sensitive patterns from automatic capture
 - **Web UI**: Browser-based interface for browsing, searching, and managing memories
-- **Profile Mode**: View and manage learned user profile data
-- **Configurable Logging**: Control log verbosity from debug to silent
 
 ## Installation
 
 ```bash
+cd ~/.config/opencode
 bun add opencode-memory
 ```
 
-Then add to your OpenCode configuration (usually at `~/.config/opencode/config.json`):
+Then register the plugin in `~/.config/opencode/opencode.jsonc`:
 
 ```json
 {
@@ -33,49 +31,48 @@ Then add to your OpenCode configuration (usually at `~/.config/opencode/config.j
 
 ## Configuration
 
-Create a configuration file at `~/.config/opencode/opencode-memory.jsonc`:
+Create `~/.config/opencode/opencode-memory.jsonc`:
 
 ```jsonc
 {
-  // API embedding settings (used when embeddingBackend is "api")
+  // Auto-capture strategy: "heuristic" (default), "ai", or "hybrid"
+  "autoCaptureMode": "heuristic",
+  "autoCaptureEnabled": true,
+  "autoCaptureDelay": 10000,
+  "autoCaptureMinImportance": 6,
+
+  // AI provider for ai/hybrid capture modes (leave empty to use OpenCode's built-in AI)
+  "aiApiUrl": "",
+  "aiApiKey": "",
+  "aiModel": "",
+
+  // Embedding backend: "auto" (default), "api", or "local"
+  "embeddingBackend": "auto",
   "embeddingApiUrl": "https://api.openai.com/v1/embeddings",
   "embeddingApiKey": "",
   "embeddingModel": "text-embedding-3-small",
   "embeddingDimensions": 1536,
 
-  // Storage settings
-  "storagePath": "~/.opencode-memory",
-
-  // Search settings
-  "searchLimit": 5,
-  "contextLimit": 3,
-
-  // Embedding backend: "auto", "api", or "local"
-  "embeddingBackend": "auto",
-
-  // Local embedding settings (used when embeddingBackend is "local")
+  // Local embedding (used when embeddingBackend is "local")
   "localModel": "nomic-ai/nomic-embed-text-v1.5",
   "localDtype": "q8",
   "localCacheDir": "~/.opencode-memory/models",
+
+  // Storage and search
+  "storagePath": "~/.opencode-memory",
+  "searchLimit": 5,
+  "contextLimit": 3,
 
   // Privacy and deduplication
   "privacyPatterns": [],
   "dedupSimilarityThreshold": 0.7,
 
-  // Auto-capture settings
-  "autoCaptureEnabled": true,
-  "autoCaptureDelay": 10000,
-  "autoCaptureMinImportance": 6,
-
-  // Feature toggles
-  "searchLayersEnabled": true,
+  // User profiling
   "profileEnabled": true,
-
-  // Profile extraction settings
   "profileExtractionMinPrompts": 5,
   "profileMaxMessagesPerExtraction": 20,
 
-  // Web UI settings
+  // Web UI
   "webServerPort": 18080,
 
   // Logging: "debug", "info", "warn", "error", or "silent"
@@ -83,114 +80,130 @@ Create a configuration file at `~/.config/opencode/opencode-memory.jsonc`:
 }
 ```
 
+## Auto-Capture Modes
+
+The `autoCaptureMode` setting controls how memories are extracted from conversations:
+
+| Mode | How It Works | AI Calls | Best For |
+|------|-------------|----------|----------|
+| `heuristic` | Keyword-based importance scoring | None | Cost-conscious, offline |
+| `ai` | Sends all messages to AI for structured extraction | All messages | Maximum quality |
+| `hybrid` | Heuristic pre-filter, then AI on qualifying messages only | Filtered only | Balanced (recommended) |
+
+### Using AI Modes
+
+By default, `ai` and `hybrid` modes use OpenCode's built-in AI — no extra configuration needed.
+
+To use a cheaper or faster independent model instead:
+
+**OpenAI:**
+```jsonc
+{
+  "autoCaptureMode": "hybrid",
+  "aiApiUrl": "https://api.openai.com/v1/chat/completions",
+  "aiApiKey": "env://OPENAI_API_KEY",
+  "aiModel": "gpt-4o-mini"
+}
+```
+
+**DeepSeek (cost-effective):**
+```jsonc
+{
+  "autoCaptureMode": "hybrid",
+  "aiApiUrl": "https://api.deepseek.com/v1/chat/completions",
+  "aiApiKey": "env://DEEPSEEK_API_KEY",
+  "aiModel": "deepseek-chat"
+}
+```
+
+**Ollama (fully local):**
+```jsonc
+{
+  "autoCaptureMode": "ai",
+  "aiApiUrl": "http://localhost:11434/v1/chat/completions",
+  "aiApiKey": "ollama",
+  "aiModel": "llama3"
+}
+```
+
+Any OpenAI-compatible API endpoint is supported (OpenAI, DeepSeek, Ollama, Anthropic proxies, etc.).
+
+### API Key Formats
+
+The `aiApiKey` and `embeddingApiKey` fields support secure secret resolution:
+
+```jsonc
+"aiApiKey": "sk-actual-key"           // plain string
+"aiApiKey": "env://OPENAI_API_KEY"    // from environment variable
+"aiApiKey": "file:///path/to/key.txt" // from file
+```
+
 ## Embedding Backends
 
-The plugin supports three embedding backends:
-
-- **auto** (default): Automatically uses local models if available, falls back to API
-- **api**: Use OpenAI or compatible embedding API (requires `embeddingApiKey`)
-- **local**: Use HuggingFace Transformers models running locally (fully offline)
+| Backend | Description |
+|---------|-------------|
+| `auto` (default) | Uses local model if no API key set, otherwise API |
+| `api` | OpenAI-compatible embedding API |
+| `local` | HuggingFace Transformers model, runs fully offline |
 
 ### Supported Local Models
 
-The following models are pre-configured with correct dimensions:
-
 | Model | Dimensions |
 |-------|------------|
-| `nomic-ai/nomic-embed-text-v1.5` | 768 |
+| `nomic-ai/nomic-embed-text-v1.5` | 768 (default) |
 | `nomic-ai/nomic-embed-text-v1` | 768 |
-| `text-embedding-3-small` | 1536 |
-| `text-embedding-3-large` | 3072 |
-| `text-embedding-ada-002` | 1536 |
 | `Xenova/all-MiniLM-L6-v2` | 384 |
-| `sentence-transformers/all-MiniLM-L6-v2` | 384 |
-| `Xenova/all-MiniLM-L12-v2` | 384 |
 | `BAAI/bge-small-en-v1.5` | 384 |
-| `Xenova/bge-small-en-v1.5` | 384 |
 | `BAAI/bge-base-en-v1.5` | 768 |
 | `BAAI/bge-large-en-v1.5` | 1024 |
+| `text-embedding-3-small` | 1536 |
+| `text-embedding-3-large` | 3072 |
 
-Local models download automatically from HuggingFace on first use. The default local model is `nomic-ai/nomic-embed-text-v1.5` (768 dimensions) with `q8` quantization for balanced quality and speed.
+Local models download automatically from HuggingFace on first use.
 
 ## Tool Modes
 
-The memory tool supports these modes via the `mode` argument:
+Interact with your memory store via the `memory` tool in conversation:
 
-- **add**: Store new knowledge with optional tags and type
-- **search**: Find memories by semantic query
-- **list**: Display all stored memories
-- **forget**: Delete a specific memory by ID
-- **profile**: View or manage user profile data
-- **web**: Start the web UI
-- **help**: Show usage information
-
-## Web UI
-
-The web interface provides a browser-based way to interact with your memory store:
-
-- **URL**: `http://localhost:18080` (default port)
-- **Start**: Use `mode: web` or configure `webServerPort` in config
-- **Features**:
-  - Browse all stored memories
-  - Search memories with semantic queries
-  - Delete unwanted memories
-  - View memory statistics
-  - Access user profile data
-
-The web server starts on-demand when you invoke the web mode.
+| Mode | Description |
+|------|-------------|
+| `add` | Store new knowledge with optional tags and type |
+| `search` | Find memories by semantic query |
+| `list` | Display all stored memories |
+| `forget` | Delete a specific memory by ID |
+| `profile` | View or manage user profile data |
+| `web` | Start the web UI |
+| `help` | Show usage information |
 
 ## User Profile
 
-The plugin can learn about you across sessions to provide more personalized assistance:
+The plugin learns about you across sessions to provide more personalized assistance:
 
-### How It Works
+- Triggers automatically on session idle events
+- Analyzes conversation history to identify preferences, patterns, and workflows
+- Stores learnings with confidence scores
 
-- Profile extraction triggers automatically on `session.idle` events
-- Analyzes recent conversation history to identify preferences, patterns, and workflows
-- Stores learnings in a structured profile with confidence scores
+Profile actions (`mode: profile`): `show`, `analyze`, `delete`, `reset`
 
-### Profile Data Types
+To disable: set `profileEnabled: false`.
 
-- **Preferences**: Key-value pairs with evidence (e.g., "favorite_language: TypeScript")
-- **Patterns**: Recurring behaviors or habits
-- **Workflows**: Named multi-step processes you frequently use
+## Web UI
 
-### Profile Mode Actions
+A browser-based interface for managing memories:
 
-Use `mode: profile` with these actions:
-
-- **show**: Display current profile (default)
-- **analyze**: Trigger manual profile extraction
-- **delete**: Remove specific profile entries (format: `type:key`)
-- **reset**: Clear entire profile
-
-To disable profile learning, set `profileEnabled: false` in your config.
+- **URL**: `http://localhost:18080` (default port, configurable)
+- Browse, search, and delete memories
+- View memory statistics and user profile data
+- Starts on-demand via `mode: web`
 
 ## Development
-
-Clone and set up for development:
 
 ```bash
 git clone https://github.com/regulusleow/opencode-memory.git
 cd opencode-memory
 bun install
-```
-
-Run tests:
-
-```bash
-bun test
-```
-
-Build distribution:
-
-```bash
-bun run build
-```
-
-Type check:
-
-```bash
+bun test        # run tests
+bun run build   # build dist/
 bun run typecheck
 ```
 
