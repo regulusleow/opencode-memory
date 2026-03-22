@@ -1,6 +1,6 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import type { MemoryStore } from "../src/services/memory-store.js";
-import type { MemorySearchResult, PluginConfig } from "../src/types.js";
+import type { MemorySearchResult } from "../src/types.js";
+import { makeConfig, makeMockStore } from "./helpers.js";
 import {
   createChatMessageHook,
   injectedSessions,
@@ -8,50 +8,6 @@ import {
 } from "../src/services/hooks.js";
 import { createDatabase } from "../src/services/database.js";
 import { createProfileStore } from "../src/services/profile-store.js";
-
-const defaultConfig: PluginConfig = {
-  embeddingApiUrl: "http://localhost:1234/v1/embeddings",
-  embeddingApiKey: "test-key",
-  embeddingModel: "test-model",
-  embeddingDimensions: 256,
-  storagePath: "/tmp/test-memory",
-  searchLimit: 10,
-  contextLimit: 5,
-  embeddingBackend: "api",
-  localModel: "",
-  localDtype: "float32",
-  localCacheDir: "/tmp/cache",
-  privacyPatterns: [],
-  dedupSimilarityThreshold: 0.7,
-  autoCaptureEnabled: true,
-  autoCaptureDelay: 10000,
-  autoCaptureMinImportance: 6,
-  searchLayersEnabled: true,
-  profileEnabled: true,
-  profileExtractionMinPrompts: 5,
-  profileMaxMessagesPerExtraction: 20,
-  webServerPort: 18080,
-};
-
-function makeMockStore(searchResult: MemorySearchResult[]): MemoryStore {
-  return {
-    add: mock(async () => ({
-      id: "mem_test",
-      content: "test",
-      tags: "",
-      type: "general",
-      metadata: {},
-      embeddingStatus: "done" as const,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    })),
-    search: mock(async () => searchResult),
-    list: mock(async () => []),
-    forget: mock(async () => true),
-    get: mock(async () => null),
-    retryPendingEmbeddings: mock(async () => 0),
-  };
-}
 
 function makeOutput(messageId = "msg_1") {
   return {
@@ -84,8 +40,8 @@ describe("createChatMessageHook", () => {
 
   it("injects memories on first message when relevant memories exist", async () => {
     const memories = [makeSearchResult()];
-    const store = makeMockStore(memories);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_1" };
     const output = makeOutput("msg_1");
 
@@ -97,8 +53,8 @@ describe("createChatMessageHook", () => {
 
   it("does NOT inject on second call (injected flag prevents it)", async () => {
     const memories = [makeSearchResult()];
-    const store = makeMockStore(memories);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_1" };
 
     const output1 = makeOutput("msg_1");
@@ -112,8 +68,8 @@ describe("createChatMessageHook", () => {
   });
 
   it("does nothing when search returns empty array", async () => {
-    const store = makeMockStore([]);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => []) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_1" };
     const output = makeOutput("msg_1");
 
@@ -124,11 +80,11 @@ describe("createChatMessageHook", () => {
   });
 
   it("does nothing when search throws (error swallowed)", async () => {
-    const store = makeMockStore([]);
+    const store = makeMockStore({ search: mock(async () => []) });
     store.search = mock(async () => {
       throw new Error("DB connection failed");
     });
-    const hook = createChatMessageHook(store, defaultConfig);
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_1" };
     const output = makeOutput("msg_1");
 
@@ -140,8 +96,8 @@ describe("createChatMessageHook", () => {
 
   it("injected part has type 'text' and synthetic true", async () => {
     const memories = [makeSearchResult()];
-    const store = makeMockStore(memories);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_1" };
     const output = makeOutput("msg_1");
 
@@ -154,8 +110,8 @@ describe("createChatMessageHook", () => {
 
   it("injected part uses 'text' field (NOT 'content') containing <relevant_memories>", async () => {
     const memories = [makeSearchResult()];
-    const store = makeMockStore(memories);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_1" };
     const output = makeOutput("msg_1");
 
@@ -169,8 +125,8 @@ describe("createChatMessageHook", () => {
 
   it("injected part includes id (prt-memory-context-), sessionID, messageID fields", async () => {
     const memories = [makeSearchResult()];
-    const store = makeMockStore(memories);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_42" };
     const output = makeOutput("msg_99");
 
@@ -184,8 +140,8 @@ describe("createChatMessageHook", () => {
 
   it("passes user message text as search query with contextLimit", async () => {
     const memories = [makeSearchResult()];
-    const store = makeMockStore(memories);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_1" };
     const output = {
       message: { id: "msg_1" },
@@ -196,14 +152,14 @@ describe("createChatMessageHook", () => {
 
     expect(store.search).toHaveBeenCalledWith(
       "How do I configure TypeScript?",
-      defaultConfig.contextLimit
+      makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }).contextLimit
     );
   });
 
   it("different sessions both get injection", async () => {
     const memories = [makeSearchResult()];
-    const store = makeMockStore(memories);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
 
     const inputA = { sessionID: "ses_A" };
     const outputA = makeOutput("msg_1");
@@ -221,8 +177,8 @@ describe("createChatMessageHook", () => {
 
   it("same session does NOT inject twice", async () => {
     const memories = [makeSearchResult()];
-    const store = makeMockStore(memories);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_A" };
 
     const output1 = makeOutput("msg_1");
@@ -237,8 +193,8 @@ describe("createChatMessageHook", () => {
 
   it("needsReinjection flag triggers re-injection", async () => {
     const memories = [makeSearchResult()];
-    const store = makeMockStore(memories);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_A" };
 
     const output1 = makeOutput("msg_1");
@@ -258,8 +214,8 @@ describe("createChatMessageHook", () => {
 
   it("flag is consumed after re-injection - third call does NOT inject", async () => {
     const memories = [makeSearchResult()];
-    const store = makeMockStore(memories);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_A" };
 
     const output1 = makeOutput("msg_1");
@@ -280,11 +236,11 @@ describe("createChatMessageHook", () => {
 
   it("search fails during re-injection but flag is cleared (no infinite retry)", async () => {
     injectedSessions.add("ses_A");
-    const store = makeMockStore([makeSearchResult()]);
+    const store = makeMockStore({ search: mock(async () => [makeSearchResult()]) });
     store.search = mock(async () => {
       throw new Error("DB error");
     });
-    const hook = createChatMessageHook(store, defaultConfig);
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_A" };
 
     needsReinjection.add("ses_A");
@@ -300,15 +256,15 @@ describe("createChatMessageHook", () => {
   });
 
   it("re-injection uses same query extraction as initial injection", async () => {
-    const store = makeMockStore([makeSearchResult()]);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => [makeSearchResult()]) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_A" };
 
     // First injection with TypeScript config message
     const output1 = makeOutput("msg_1");
     output1.parts = [{ type: "text", text: "TypeScript config" }] as any[];
     await hook(input, output1);
-    expect(store.search).toHaveBeenCalledWith("TypeScript config", defaultConfig.contextLimit);
+    expect(store.search).toHaveBeenCalledWith("TypeScript config", makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }).contextLimit);
 
     // Mark for re-injection with different message
     needsReinjection.add("ses_A");
@@ -320,7 +276,7 @@ describe("createChatMessageHook", () => {
     // Should search with new message text, not the old one
     expect(store.search).toHaveBeenLastCalledWith(
       "Second message",
-      defaultConfig.contextLimit
+      makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }).contextLimit
     );
   });
 
@@ -329,8 +285,8 @@ describe("createChatMessageHook", () => {
     needsReinjection.add("ses_A");
 
     const memories = [makeSearchResult()];
-    const store = makeMockStore(memories);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_A" };
 
     const output = makeOutput("msg_1");
@@ -379,8 +335,8 @@ describe("createChatMessageHook — profile injection", () => {
     const { profileStore } = makeProfileDb();
     profileStore.saveProfile(makeTestProfile());
 
-    const store = makeMockStore([]);
-    const hook = createChatMessageHook(store, defaultConfig, profileStore);
+    const store = makeMockStore({ search: mock(async () => []) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }), profileStore);
     const input = { sessionID: "ses_p1" };
     const output = makeOutput("msg_p1");
 
@@ -397,8 +353,8 @@ describe("createChatMessageHook — profile injection", () => {
       preferences: [{ key: "style", value: "functional", confidence: 0.8, evidence: [], updatedAt: Date.now() }],
     }));
 
-    const store = makeMockStore([]);
-    const hook = createChatMessageHook(store, defaultConfig, profileStore);
+    const store = makeMockStore({ search: mock(async () => []) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }), profileStore);
     const input = { sessionID: "ses_p2" };
     const output = makeOutput("msg_p2");
 
@@ -415,8 +371,8 @@ describe("createChatMessageHook — profile injection", () => {
     const { profileStore } = makeProfileDb();
     profileStore.saveProfile(makeTestProfile());
 
-    const storeWithMemory = makeMockStore([makeSearchResult()]);
-    const hook = createChatMessageHook(storeWithMemory, defaultConfig, profileStore);
+    const storeWithMemory = makeMockStore({ search: mock(async () => [makeSearchResult()]) });
+    const hook = createChatMessageHook(storeWithMemory, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }), profileStore);
     const input = { sessionID: "ses_p3" };
     const output = makeOutput("msg_p3");
 
@@ -432,8 +388,8 @@ describe("createChatMessageHook — profile injection", () => {
   it("does NOT inject profile part when profile is null", async () => {
     const { profileStore } = makeProfileDb();
 
-    const store = makeMockStore([]);
-    const hook = createChatMessageHook(store, defaultConfig, profileStore);
+    const store = makeMockStore({ search: mock(async () => []) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }), profileStore);
     const input = { sessionID: "ses_p4" };
     const output = makeOutput("msg_p4");
 
@@ -447,8 +403,8 @@ describe("createChatMessageHook — profile injection", () => {
     const { profileStore } = makeProfileDb();
     profileStore.saveProfile(makeTestProfile());
 
-    const disabledConfig = { ...defaultConfig, profileEnabled: false };
-    const store = makeMockStore([]);
+    const disabledConfig = { ...makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }), profileEnabled: false };
+    const store = makeMockStore({ search: mock(async () => []) });
     const hook = createChatMessageHook(store, disabledConfig, profileStore);
     const input = { sessionID: "ses_p5" };
     const output = makeOutput("msg_p5");
@@ -460,8 +416,8 @@ describe("createChatMessageHook — profile injection", () => {
   });
 
   it("works without profileStore (backward compatibility)", async () => {
-    const store = makeMockStore([]);
-    const hook = createChatMessageHook(store, defaultConfig);
+    const store = makeMockStore({ search: mock(async () => []) });
+    const hook = createChatMessageHook(store, makeConfig({ embeddingDimensions: 256, searchLimit: 10, contextLimit: 5 }));
     const input = { sessionID: "ses_p6" };
     const output = makeOutput("msg_p6");
 

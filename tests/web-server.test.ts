@@ -1,38 +1,8 @@
 import { describe, test, expect, beforeAll, afterAll, mock } from "bun:test";
 import { createWebServer } from "../src/services/web-server";
-import type { PluginConfig } from "../src/types";
-import type { MemoryStore } from "../src/services/memory-store";
-import type { ProfileStore } from "../src/services/profile-store";
-import type { Logger } from "../src/services/logger";
+import { makeConfig, makeMockStore, makeMockProfileStore, makeMockLogger } from "./helpers.js";
 
 const TEST_PORT = 19080;
-
-function makeConfig(overrides: Partial<PluginConfig> = {}): PluginConfig {
-  return {
-    embeddingApiUrl: "http://test",
-    embeddingApiKey: "",
-    embeddingModel: "test",
-    embeddingDimensions: 1536,
-    storagePath: "/tmp",
-    searchLimit: 20,
-    contextLimit: 5,
-    embeddingBackend: "auto",
-    localModel: "",
-    localDtype: "",
-    localCacheDir: "",
-    privacyPatterns: [],
-    dedupSimilarityThreshold: 0.9,
-    autoCaptureEnabled: false,
-    autoCaptureDelay: 1000,
-    autoCaptureMinImportance: 6,
-    searchLayersEnabled: true,
-    profileEnabled: true,
-    profileExtractionMinPrompts: 5,
-    profileMaxMessagesPerExtraction: 20,
-    webServerPort: TEST_PORT,
-    ...overrides,
-  };
-}
 
 const testMemory = {
   id: "mem-1",
@@ -51,47 +21,11 @@ const testSearchResult = {
   distance: 0.1,
 };
 
-function makeMockStore(): MemoryStore {
-  return {
-    list: mock(() => Promise.resolve([testMemory])),
-    search: mock(() => Promise.resolve([testSearchResult])),
-    forget: mock((id: string) => Promise.resolve(id === "mem-1")),
-    add: mock(() => Promise.resolve(testMemory)),
-    get: mock(() => Promise.resolve(testMemory)),
-    retryPendingEmbeddings: mock(() => Promise.resolve(0)),
-  };
-}
-
-function makeMockProfileStore(profile: ReturnType<ProfileStore["getProfile"]> = null): ProfileStore {
-  return {
-    getProfile: mock(() => profile),
-    saveProfile: mock(() => {}),
-    mergeProfile: mock(() => {
-      throw new Error("not implemented in mock");
-    }),
-    deletePreference: mock(() => false),
-    deletePattern: mock(() => false),
-    deleteWorkflow: mock(() => false),
-    resetProfile: mock(() => {}),
-    addChangelog: mock(() => {}),
-    getChangelog: mock(() => []),
-  };
-}
-
-function makeMockLogger(): Logger {
-  return {
-    debug: mock(() => {}),
-    info: mock(() => {}),
-    warn: mock(() => {}),
-    error: mock(() => {}),
-  };
-}
-
 describe("Web Server", () => {
   let server: ReturnType<typeof createWebServer>;
   let baseUrl: string;
   const store = makeMockStore();
-  const profileStore = makeMockProfileStore({
+  const profileData = {
     id: "singleton",
     preferences: [],
     patterns: [],
@@ -100,9 +34,16 @@ describe("Web Server", () => {
     lastAnalyzedAt: 0,
     createdAt: 0,
     updatedAt: 0,
-  });
+  };
+  const profileStore = makeMockProfileStore({ getProfile: mock(() => profileData) });
 
   beforeAll(() => {
+    (store.list as any).mockImplementation(() => Promise.resolve([testMemory]));
+    (store.search as any).mockImplementation(() => Promise.resolve([testSearchResult]));
+    (store.forget as any).mockImplementation((id: string) => Promise.resolve(id === "mem-1"));
+    (store.add as any).mockImplementation(() => Promise.resolve(testMemory));
+    (store.get as any).mockImplementation(() => Promise.resolve(testMemory));
+    
     server = createWebServer({
       store,
       profileStore,
@@ -198,9 +139,9 @@ describe("Web Server", () => {
     });
   });
 
-  describe("GET /api/profile when no profile", () => {
+   describe("GET /api/profile when no profile", () => {
     test("returns 200 with null when no profile exists", async () => {
-      const emptyProfileStore = makeMockProfileStore(null);
+      const emptyProfileStore = makeMockProfileStore();
       const server2 = createWebServer({
         store: makeMockStore(),
         profileStore: emptyProfileStore,
