@@ -83,7 +83,7 @@ export const plugin: Plugin = async (ctx: PluginInput) => {
 
     const memoryTool = createMemoryTool(store, config, { profileStore, profileExtractor, onWebStart });
     const chatHook = createChatMessageHook(store, config, profileStore);
-    const autoCapture = createAutoCapture({ client: ctx.client as any, store, config, logger });
+     const autoCapture = createAutoCapture({ client: ctx.client as any, store, config, logger, aiService });
     const eventHandler = createEventHandler({ needsReinjection, onIdle: autoCapture, onIdleProfile: profileExtractor.extract, config, logger });
 
     return {
