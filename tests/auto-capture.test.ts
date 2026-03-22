@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { Logger } from "../src/services/logger.js";
 import type { MemoryStore } from "../src/services/memory-store.js";
-import type { Memory, PluginConfig } from "../src/types.js";
+import type { AiService, Memory, PluginConfig } from "../src/types.js";
 import {
   createAutoCapture,
   getExtractionPrompt,
@@ -28,6 +28,10 @@ function makeConfig(overrides: Partial<PluginConfig> = {}): PluginConfig {
     autoCaptureEnabled: true,
     autoCaptureDelay: 0,
     autoCaptureMinImportance: 6,
+    aiApiUrl: "",
+    aiApiKey: "",
+    aiModel: "",
+    autoCaptureMode: "heuristic",
     searchLayersEnabled: true,
     profileEnabled: true,
     profileExtractionMinPrompts: 5,
@@ -283,5 +287,190 @@ describe("auto-capture extraction helpers", () => {
     ).toEqual({
       memories: [{ content: "valid", tags: "ok" }],
     });
+  });
+});
+
+describe("createAutoCapture mode behavior", () => {
+  let logger: Logger;
+
+  beforeEach(() => {
+    logger = makeLogger();
+  });
+
+  it("AI mode stores memories returned by aiService", async () => {
+    const { store, add } = makeStore();
+    const client = makeClient([
+      { info: { role: "user" }, parts: [{ type: "text", text: "I decided to use approach A" }] },
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "This is important to remember" }] },
+    ]);
+    const mockAiService: AiService = {
+      complete: mock(async () => JSON.stringify({ memories: [{ content: "test", tags: "t1" }] })),
+      isConfigured: mock(() => true),
+    };
+
+    const capture = createAutoCapture({
+      client,
+      store,
+      config: makeConfig({ autoCaptureMode: "ai" }),
+      logger,
+      aiService: mockAiService,
+    });
+
+    await capture("ses_mode_ai_1");
+
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith("test", { tags: "t1", type: "auto" });
+  });
+
+  it("AI mode calls aiService.complete with extraction prompt and schema", async () => {
+    const { store } = makeStore();
+    const client = makeClient([
+      { info: { role: "user" }, parts: [{ type: "text", text: "decision architecture" }] },
+    ]);
+    const mockAiService: AiService = {
+      complete: mock(async () => JSON.stringify({ memories: [] })),
+      isConfigured: mock(() => true),
+    };
+
+    const capture = createAutoCapture({
+      client,
+      store,
+      config: makeConfig({ autoCaptureMode: "ai" }),
+      logger,
+      aiService: mockAiService,
+    });
+
+    await capture("ses_mode_ai_2");
+
+    expect(mockAiService.complete as ReturnType<typeof mock>).toHaveBeenCalledTimes(1);
+    const [promptArg, schemaArg] = (mockAiService.complete as ReturnType<typeof mock>).mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(promptArg).toBeString();
+    expect(promptArg.length).toBeGreaterThan(0);
+    expect(schemaArg).toBeDefined();
+  });
+
+  it("AI mode logs error and does not store when aiService throws", async () => {
+    const { store, add } = makeStore();
+    const client = makeClient([
+      { info: { role: "user" }, parts: [{ type: "text", text: "decision architecture bug" }] },
+    ]);
+    const mockAiService: AiService = {
+      complete: mock(async () => {
+        throw new Error("ai failure");
+      }),
+      isConfigured: mock(() => true),
+    };
+
+    const capture = createAutoCapture({
+      client,
+      store,
+      config: makeConfig({ autoCaptureMode: "ai" }),
+      logger,
+      aiService: mockAiService,
+    });
+
+    await capture("ses_mode_ai_3");
+    expect(add).not.toHaveBeenCalled();
+    expect(logger.error as ReturnType<typeof mock>).toHaveBeenCalled();
+  });
+
+  it("AI mode falls back to heuristic when aiService is missing", async () => {
+    const { store, add } = makeStore();
+    const client = makeClient([
+      { info: { role: "user" }, parts: [{ type: "text", text: "decision architecture bug" }] },
+    ]);
+
+    const capture = createAutoCapture({
+      client,
+      store,
+      config: makeConfig({ autoCaptureMode: "ai" }),
+      logger,
+    });
+
+    await capture("ses_mode_ai_4");
+
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith("decision architecture bug", {
+      tags: "auto-captured",
+      type: "auto",
+    });
+  });
+
+  it("hybrid mode skips ai call when no texts pass threshold", async () => {
+    const { store } = makeStore();
+    const client = makeClient([{ info: { role: "user" }, parts: [{ type: "text", text: "ok" }] }]);
+    const mockAiService: AiService = {
+      complete: mock(async () => JSON.stringify({ memories: [] })),
+      isConfigured: mock(() => true),
+    };
+
+    const capture = createAutoCapture({
+      client,
+      store,
+      config: makeConfig({ autoCaptureMode: "hybrid", autoCaptureMinImportance: 10 }),
+      logger,
+      aiService: mockAiService,
+    });
+
+    await capture("ses_mode_hybrid_1");
+
+    expect(mockAiService.complete as ReturnType<typeof mock>).not.toHaveBeenCalled();
+  });
+
+  it("hybrid mode sends only qualifying texts to aiService", async () => {
+    const { store } = makeStore();
+    const lowText = "ok";
+    const highText = "decision architecture bug";
+    const client = makeClient([
+      { info: { role: "user" }, parts: [{ type: "text", text: lowText }] },
+      { info: { role: "assistant" }, parts: [{ type: "text", text: highText }] },
+    ]);
+    const mockAiService: AiService = {
+      complete: mock(async () => JSON.stringify({ memories: [] })),
+      isConfigured: mock(() => true),
+    };
+
+    const capture = createAutoCapture({
+      client,
+      store,
+      config: makeConfig({ autoCaptureMode: "hybrid", autoCaptureMinImportance: 6 }),
+      logger,
+      aiService: mockAiService,
+    });
+
+    await capture("ses_mode_hybrid_2");
+
+    const [promptArg] = (mockAiService.complete as ReturnType<typeof mock>).mock.calls[0] as [string];
+    expect(promptArg).toContain(highText);
+    expect(promptArg).not.toContain(lowText);
+  });
+
+  it("hybrid mode stores ai extracted memories", async () => {
+    const { store, add } = makeStore();
+    const client = makeClient([
+      { info: { role: "user" }, parts: [{ type: "text", text: "decision architecture bug" }] },
+    ]);
+    const mockAiService: AiService = {
+      complete: mock(async () =>
+        JSON.stringify({ memories: [{ content: "learned X", tags: "tag1" }] })
+      ),
+      isConfigured: mock(() => true),
+    };
+
+    const capture = createAutoCapture({
+      client,
+      store,
+      config: makeConfig({ autoCaptureMode: "hybrid" }),
+      logger,
+      aiService: mockAiService,
+    });
+
+    await capture("ses_mode_hybrid_3");
+
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith("learned X", { tags: "tag1", type: "auto" });
   });
 });
