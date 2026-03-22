@@ -426,7 +426,8 @@ describe("createAutoCapture mode behavior", () => {
     const highText = "decision architecture bug";
     const client = makeClient([
       { info: { role: "user" }, parts: [{ type: "text", text: lowText }] },
-      { info: { role: "assistant" }, parts: [{ type: "text", text: highText }] },
+      { info: { role: "user" }, parts: [{ type: "text", text: highText }] },
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "response" }] },
     ]);
     const mockAiService: AiService = {
       complete: mock(async () => JSON.stringify({ memories: [] })),

@@ -17,7 +17,7 @@ import { createEventHandler } from "./services/event-handler.js";
 import { createAutoCapture } from "./services/auto-capture.js";
 import { createProfileStore } from "./services/profile-store.js";
 import { createProfileExtractor, type ProfileClient } from "./services/profile-extractor.js";
-import { createAiService } from "./services/ai-service.js";
+import { createAiService, type PromptClient } from "./services/ai-service.js";
 import { createWebServer } from "./services/web-server.js";
 import { getIndexHtml } from "./services/web-ui.js";
 
@@ -69,7 +69,7 @@ export const plugin: Plugin = async (ctx: PluginInput) => {
     const store = createMemoryStore(db, embeddingService, config, vectorBackend, privacyFilter, dedupService, logger);
 
     const profileStore = createProfileStore(db);
-    const aiService = createAiService({ client: ctx.client as any, config, logger });
+    const aiService = createAiService({ client: ctx.client as unknown as PromptClient, config, logger });
     const profileExtractor = createProfileExtractor({ client: ctx.client as unknown as ProfileClient, aiService, profileStore, config, logger });
     const webServer = createWebServer({ store, profileStore, config, logger, getHtml: () => getIndexHtml(config.webServerPort) });
 

@@ -4,7 +4,7 @@ const TIMEOUT_MS = 30000;
 const JSON_SCHEMA_SUFFIX =
   "\n\nRespond with valid JSON matching this schema. No markdown, no explanation, just JSON.";
 
-interface PromptClient {
+export interface PromptClient {
   session: {
     prompt(
       text: string,

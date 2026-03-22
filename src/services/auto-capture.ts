@@ -107,8 +107,12 @@ export function createAutoCapture(options: {
 }): (sessionID: string) => Promise<void> {
   const { client, store, config, logger, aiService } = options;
 
-  const getTextParts = (messages: Array<{ info: any; parts: any[] }>): string[] => {
-    return messages.flatMap((message) =>
+  const getTextParts = (messages: Array<{ info: any; parts: any[] }>, roleFilter?: string): string[] => {
+    let filtered = messages;
+    if (roleFilter) {
+      filtered = messages.filter((message) => message.info.role === roleFilter);
+    }
+    return filtered.flatMap((message) =>
       message.parts
         .filter((part) => part.type === "text" && typeof part.text === "string")
         .map((part) => part.text as string)
@@ -160,14 +164,14 @@ export function createAutoCapture(options: {
 
       if (config.autoCaptureMode === "ai") {
         try {
-          await runAi(aiService, getTextParts(messages));
+          await runAi(aiService, getTextParts(messages, "user"));
         } catch (error) {
           logger.error("AI auto-capture failed", { sessionID, error: String(error) });
         }
         return;
       }
 
-      const qualifyingTexts = getTextParts(messages).filter(
+      const qualifyingTexts = getTextParts(messages, "user").filter(
         (text) => scoreImportance(text) >= config.autoCaptureMinImportance
       );
       if (qualifyingTexts.length === 0) {

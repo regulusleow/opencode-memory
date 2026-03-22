@@ -292,7 +292,7 @@ export function getConfig(projectPath: string): PluginConfig {
         ? raw.aiApiUrl
         : defaults.aiApiUrl,
     aiApiKey: resolveSecret(
-      typeof raw.aiApiKey === "string" ? raw.aiApiKey : defaults.aiApiKey
+      typeof raw.aiApiKey === "string" ? raw.aiApiKey : defaults.aiApiKey ?? ""
     ),
     aiModel:
       typeof raw.aiModel === "string"

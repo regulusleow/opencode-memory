@@ -39,10 +39,10 @@ export interface PluginConfig {
   profileMaxMessagesPerExtraction: number;
   webServerPort: number;
   logLevel: "debug" | "info" | "warn" | "error" | "silent";
-  aiApiUrl: string;
-  aiApiKey: string;
-  aiModel: string;
-  autoCaptureMode: "heuristic" | "ai" | "hybrid";
+  aiApiUrl?: string;
+  aiApiKey?: string;
+  aiModel?: string;
+  autoCaptureMode?: "heuristic" | "ai" | "hybrid";
 }
 
 export interface ProfilePreference {
