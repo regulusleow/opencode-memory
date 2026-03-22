@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { Logger } from "../src/services/logger.js";
 import type { MemoryStore } from "../src/services/memory-store.js";
 import type { Memory, PluginConfig } from "../src/types.js";
-import { createAutoCapture, scoreImportance } from "../src/services/auto-capture.js";
+import {
+  createAutoCapture,
+  getExtractionPrompt,
+  getExtractionSchema,
+  parseExtractionResponse,
+  scoreImportance,
+} from "../src/services/auto-capture.js";
 
 function makeConfig(overrides: Partial<PluginConfig> = {}): PluginConfig {
   return {
@@ -22,6 +28,12 @@ function makeConfig(overrides: Partial<PluginConfig> = {}): PluginConfig {
     autoCaptureEnabled: true,
     autoCaptureDelay: 0,
     autoCaptureMinImportance: 6,
+    searchLayersEnabled: true,
+    profileEnabled: true,
+    profileExtractionMinPrompts: 5,
+    profileMaxMessagesPerExtraction: 20,
+    webServerPort: 18080,
+    logLevel: "info",
     ...overrides,
   };
 }
@@ -223,5 +235,53 @@ describe("createAutoCapture", () => {
 
     await capture("ses_7");
     expect(client.session.messages).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("auto-capture extraction helpers", () => {
+  it("getExtractionPrompt returns instruction-oriented non-empty text", () => {
+    const prompt = getExtractionPrompt(["text1", "text2"]);
+
+    expect(prompt.length).toBeGreaterThan(0);
+    expect(prompt.toLowerCase()).toContain("extract");
+    expect(prompt.toLowerCase()).toContain("memories");
+  });
+
+  it("getExtractionSchema returns object schema with memories property", () => {
+    const schema = getExtractionSchema() as {
+      type?: string;
+      properties?: Record<string, unknown>;
+    };
+
+    expect(schema.type).toBe("object");
+    expect(schema.properties?.memories).toBeDefined();
+  });
+
+  it("parseExtractionResponse returns valid memories", () => {
+    expect(parseExtractionResponse('{"memories":[{"content":"test","tags":"tag1"}]}')).toEqual({
+      memories: [{ content: "test", tags: "tag1" }],
+    });
+  });
+
+  it("parseExtractionResponse handles empty memories array", () => {
+    expect(parseExtractionResponse('{"memories":[]}')).toEqual({ memories: [] });
+  });
+
+  it("parseExtractionResponse returns empty memories on invalid JSON", () => {
+    expect(parseExtractionResponse("invalid json")).toEqual({ memories: [] });
+  });
+
+  it("parseExtractionResponse filters empty entries", () => {
+    expect(parseExtractionResponse('{"memories":[{"content":"","tags":""}]}')).toEqual({
+      memories: [],
+    });
+  });
+
+  it("parseExtractionResponse keeps valid entries and drops invalid ones", () => {
+    expect(
+      parseExtractionResponse('{"memories":[{"content":"valid","tags":"ok"},{"content":"","tags":""}]}')
+    ).toEqual({
+      memories: [{ content: "valid", tags: "ok" }],
+    });
   });
 });
