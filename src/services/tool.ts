@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin";
 import type { MemoryStore } from "./memory-store.js";
-import type { PluginConfig, MemoryType, MemoryStats, ExportData } from "../types.js";
+import type { PluginConfig, MemoryType, MemoryStats, ExportData, ImportResult } from "../types.js";
 import type { ProfileStore } from "./profile-store.js";
 import {
   formatMemoryContext,
@@ -58,7 +58,7 @@ export function createMemoryTool(
       "Manage and query project memory. Use 'search' with technical keywords/tags, 'add' to store knowledge, 'profile' to view/manage user profile.",
     args: {
       mode: tool.schema
-        .enum(["add", "search", "list", "forget", "help", "profile", "web", "stats", "export"])
+        .enum(["add", "search", "list", "forget", "help", "profile", "web", "stats", "export", "import"])
         .optional(),
       content: tool.schema.string().optional(),
       query: tool.schema.string().optional(),
@@ -70,7 +70,7 @@ export function createMemoryTool(
     },
     async execute(
       args: {
-        mode?: "add" | "search" | "list" | "forget" | "help" | "profile" | "web" | "stats" | "export";
+        mode?: "add" | "search" | "list" | "forget" | "help" | "profile" | "web" | "stats" | "export" | "import";
         content?: string;
         query?: string;
         tags?: string;
@@ -190,12 +190,28 @@ export function createMemoryTool(
              return formatStats(stats);
            }
 
-           case "export": {
-             const exportData = await (store as any).exportAll();
-             return JSON.stringify(exportData);
-           }
+            case "export": {
+              const exportData = await (store as any).exportAll();
+              return JSON.stringify(exportData);
+            }
 
-           default:
+            case "import": {
+              if (!args.content) {
+                return "Error: content is required for import mode. Provide the JSON export data as content.";
+              }
+
+              let data: ExportData;
+              try {
+                data = JSON.parse(args.content);
+              } catch {
+                return "Error: invalid JSON. Content must be a valid JSON export from mode=export.";
+              }
+
+              const result = await (store as any).importMemories(data);
+              return `Import complete: ${result.imported} imported, ${result.skipped} skipped.`;
+            }
+
+            default:
              return `Unknown mode: ${mode}. Use help for usage.`;
          }
        } catch (error) {

@@ -132,3 +132,8 @@ export interface ExportData {
   memories: ExportedMemory[];
 }
 
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+}
+

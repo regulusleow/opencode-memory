@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { generateMemoryId } from "../config.js";
 import type { EmbeddingService } from "./embedding.js";
-import type { Memory, MemorySearchResult, PluginConfig, MemoryType, MemoryStats, ExportData, ExportedMemory } from "../types.js";
+import type { Memory, MemorySearchResult, PluginConfig, MemoryType, MemoryStats, ExportData, ExportedMemory, ImportResult } from "../types.js";
 import type { VectorBackend } from "./vector-backend.js";
 import type { PrivacyFilter } from "./privacy.js";
 import type { DedupService } from "./dedup.js";
@@ -27,6 +27,7 @@ export interface MemoryStore {
   getStats(): Promise<MemoryStats>;
   recordSearchHit(ids: string[]): Promise<void>;
   exportAll(): Promise<ExportData>;
+  importMemories(data: ExportData): Promise<ImportResult>;
 }
 
 function rowToMemory(row: any): Memory {
@@ -444,6 +445,47 @@ export function createMemoryStore(
           memories: [],
         };
       }
+    },
+
+    async importMemories(data: ExportData): Promise<ImportResult> {
+      if (data.schemaVersion !== 1) {
+        throw new Error(`Unsupported schema version: ${data.schemaVersion}`);
+      }
+
+      let imported = 0;
+      let skipped = 0;
+
+      for (const memory of data.memories) {
+        // Check if ID already exists
+        const existing = db.query("SELECT id FROM memories WHERE id = ?").get(memory.id);
+        if (existing) {
+          skipped++;
+          continue;
+        }
+
+        // Direct SQL INSERT (not store.add — bypasses privacy filter, dedup, embedding)
+        try {
+          db.query(`
+            INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at, search_hit_count, last_accessed_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+          `).run(
+            memory.id,
+            memory.content,
+            memory.tags,
+            memory.type,
+            JSON.stringify(memory.metadata),
+            memory.createdAt,
+            memory.updatedAt,
+            memory.searchHitCount ?? 0,
+            memory.lastAccessedAt ?? null,
+          );
+          imported++;
+        } catch {
+          skipped++;
+        }
+      }
+
+      return { imported, skipped };
     },
   };
 }
