@@ -1,12 +1,16 @@
+export type MemoryType = "general" | "decision" | "preference" | "lesson" | "code-pattern" | "bug-fix" | "auto";
+
 export interface Memory {
   id: string;
   content: string;
   tags: string;
-  type: string;
+  type: MemoryType;
   metadata: Record<string, unknown>;
   embeddingStatus: "pending" | "done" | "failed";
   createdAt: number;
   updatedAt: number;
+  searchHitCount?: number;
+  lastAccessedAt?: number;
 }
 
 export interface MemorySearchResult extends Memory {
@@ -14,7 +18,7 @@ export interface MemorySearchResult extends Memory {
   distance: number;
 }
 
-export type MemoryMode = "add" | "search" | "list" | "forget" | "help" | "profile" | "web";
+export type MemoryMode = "add" | "search" | "list" | "forget" | "help" | "profile" | "web" | "export" | "import" | "stats";
 
 export interface PluginConfig {
   embeddingApiUrl: string;

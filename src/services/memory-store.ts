@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { generateMemoryId } from "../config.js";
 import type { EmbeddingService } from "./embedding.js";
-import type { Memory, MemorySearchResult, PluginConfig } from "../types.js";
+import type { Memory, MemorySearchResult, PluginConfig, MemoryType } from "../types.js";
 import type { VectorBackend } from "./vector-backend.js";
 import type { PrivacyFilter } from "./privacy.js";
 import type { DedupService } from "./dedup.js";
@@ -15,7 +15,7 @@ export interface MemoryStore {
     content: string,
     options?: {
       tags?: string;
-      type?: string;
+      type?: MemoryType;
       metadata?: Record<string, unknown>;
     }
   ): Promise<Memory>;

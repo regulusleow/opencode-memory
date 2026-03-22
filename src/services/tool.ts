@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin";
 import type { MemoryStore } from "./memory-store.js";
-import type { PluginConfig } from "../types.js";
+import type { PluginConfig, MemoryType } from "../types.js";
 import type { ProfileStore } from "./profile-store.js";
 import {
   formatMemoryContext,
@@ -65,7 +65,7 @@ export function createMemoryTool(
             }
             const memory = await store.add(args.content, {
               tags: args.tags,
-              type: args.type,
+              type: (args.type as MemoryType | undefined) || "general",
             });
             return `Memory stored with ID: ${memory.id}`;
           }
