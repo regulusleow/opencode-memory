@@ -36,6 +36,11 @@ function makeConfig(overrides: Partial<PluginConfig> = {}): PluginConfig {
     profileExtractionMinPrompts: 1,
     profileMaxMessagesPerExtraction: 20,
     webServerPort: TEST_WEB_PORT,
+    logLevel: "silent",
+    aiApiUrl: "",
+    aiApiKey: "",
+    aiModel: "",
+    autoCaptureMode: "heuristic",
     ...overrides,
   };
 }
@@ -118,40 +123,45 @@ describe("Phase 3 integration", () => {
             parts: [{ type: "text", text: "我主要使用 Objective-C 做 iOS 开发" }],
           },
         ]),
-        prompt: vi.fn(async () =>
-          JSON.stringify({
-            preferences: [
-              {
-                key: "language",
-                value: "Objective-C",
-                confidence: 0.95,
-                evidence: ["我主要使用 Objective-C"],
-                updatedAt: Date.now(),
-              },
-            ],
-            patterns: [
-              {
-                key: "analysis",
-                description: "偏好深度分析",
-                frequency: 3,
-                lastSeen: Date.now(),
-              },
-            ],
-            workflows: [
-              {
-                name: "analysis-mode",
-                steps: ["阅读", "验证", "落地"],
-                frequency: 2,
-                lastSeen: Date.now(),
-              },
-            ],
-          })
-        ),
       },
+    };
+
+    const mockAiService = {
+      complete: vi.fn(async () =>
+        JSON.stringify({
+          preferences: [
+            {
+              key: "language",
+              value: "Objective-C",
+              confidence: 0.95,
+              evidence: ["我主要使用 Objective-C"],
+              updatedAt: Date.now(),
+            },
+          ],
+          patterns: [
+            {
+              key: "analysis",
+              description: "偏好深度分析",
+              frequency: 3,
+              lastSeen: Date.now(),
+            },
+          ],
+          workflows: [
+            {
+              name: "analysis-mode",
+              steps: ["阅读", "验证", "落地"],
+              frequency: 2,
+              lastSeen: Date.now(),
+            },
+          ],
+        })
+      ),
+      isConfigured: vi.fn(() => true),
     };
 
     const profileExtractor = createProfileExtractor({
       client,
+      aiService: mockAiService,
       profileStore,
       config: makeConfig({ profileExtractionMinPrompts: 1 }),
       logger,

@@ -1,4 +1,4 @@
-import type { ProfilePattern, ProfilePreference, ProfileWorkflow, PluginConfig } from "../types.js";
+import type { AiService, ProfilePattern, ProfilePreference, ProfileWorkflow, PluginConfig } from "../types.js";
 import type { Logger } from "./logger.js";
 import type { ProfileStore } from "./profile-store.js";
 
@@ -17,10 +17,6 @@ interface SessionMessage {
 export interface ProfileClient {
   session: {
     messages: (args: { path: { id: string } }) => Promise<SessionMessage[]>;
-    prompt: (
-      prompt: string,
-      options: { format: { type: "json_schema"; schema: Record<string, unknown> } }
-    ) => Promise<unknown>;
   };
 }
 
@@ -36,11 +32,12 @@ export interface ProfileExtractor {
 
 export function createProfileExtractor(options: {
   client: ProfileClient;
+  aiService: AiService;
   profileStore: ProfileStore;
   config: PluginConfig;
   logger: Logger;
 }): ProfileExtractor {
-  const { client, profileStore, config, logger } = options;
+  const { client, aiService, profileStore, config, logger } = options;
 
   async function extract(sessionID: string): Promise<void> {
     try {
@@ -56,12 +53,7 @@ export function createProfileExtractor(options: {
       }
 
       const promptText = getAnalysisPrompt(limitedTexts);
-      const raw = await client.session.prompt(promptText, {
-        format: {
-          type: "json_schema",
-          schema: getJsonSchema(),
-        },
-      });
+      const raw = await aiService.complete(promptText, getJsonSchema());
 
       const extracted = parseExtractionResponse(raw);
       profileStore.mergeProfile(extracted);
@@ -84,9 +76,8 @@ function getTextFromParts(parts: SessionMessagePart[]): string {
     .trim();
 }
 
-function parseExtractionResponse(raw: unknown): ExtractedProfile {
-  const rawText = getPromptResponseText(raw);
-  const parsed = JSON.parse(rawText) as {
+function parseExtractionResponse(raw: string): ExtractedProfile {
+  const parsed = JSON.parse(raw) as {
     preferences?: unknown;
     patterns?: unknown;
     workflows?: unknown;
@@ -97,26 +88,6 @@ function parseExtractionResponse(raw: unknown): ExtractedProfile {
     patterns: parsePatterns(parsed.patterns),
     workflows: parseWorkflows(parsed.workflows),
   };
-}
-
-function getPromptResponseText(raw: unknown): string {
-  if (typeof raw === "string") {
-    return raw;
-  }
-
-  if (raw && typeof raw === "object") {
-    const maybeText = (raw as { text?: unknown }).text;
-    if (typeof maybeText === "string") {
-      return maybeText;
-    }
-
-    const maybeOutputText = (raw as { output_text?: unknown }).output_text;
-    if (typeof maybeOutputText === "string") {
-      return maybeOutputText;
-    }
-  }
-
-  throw new Error("Profile extractor received non-text prompt response");
 }
 
 function parsePreferences(input: unknown): ProfilePreference[] {

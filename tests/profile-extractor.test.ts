@@ -27,6 +27,11 @@ function makeConfig(overrides: Partial<PluginConfig> = {}): PluginConfig {
     profileExtractionMinPrompts: 3,
     profileMaxMessagesPerExtraction: 10,
     webServerPort: 18080,
+    logLevel: "silent",
+    aiApiUrl: "",
+    aiApiKey: "",
+    aiModel: "",
+    autoCaptureMode: "heuristic",
     ...overrides,
   };
 }
@@ -35,6 +40,13 @@ function makeMessage(role: "user" | "assistant", text: string) {
   return {
     info: { role },
     parts: [{ type: "text", text }],
+  };
+}
+
+function makeMockAiService(completeFn?: (...args: unknown[]) => Promise<string>) {
+  return {
+    complete: mock(completeFn ?? (async () => JSON.stringify({ preferences: [], patterns: [], workflows: [] }))),
+    isConfigured: mock(() => true),
   };
 }
 
@@ -60,28 +72,28 @@ describe("ProfileExtractor", () => {
   });
 
   describe("extract threshold guard", () => {
-    test("does not call session.prompt when below minPrompts", async () => {
-      const promptMock = mock(async () => "{}");
+    test("does not call aiService.complete when below minPrompts", async () => {
+      const mockAiService = makeMockAiService();
       const client = {
         session: {
           messages: mock(async () => [makeMessage("user", "only one user message")]),
-          prompt: promptMock,
         },
       };
 
       const extractor = createProfileExtractor({
         client,
+        aiService: mockAiService,
         profileStore,
         config: makeConfig({ profileExtractionMinPrompts: 3 }),
         logger: mockLogger,
       });
 
       await extractor.extract("session-1");
-      expect(promptMock).not.toHaveBeenCalled();
+      expect(mockAiService.complete).not.toHaveBeenCalled();
     });
 
-    test("calls session.prompt when at or above minPrompts", async () => {
-      const promptMock = mock(async () =>
+    test("calls aiService.complete when at or above minPrompts", async () => {
+      const mockAiService = makeMockAiService(async () =>
         JSON.stringify({
           preferences: [
             {
@@ -104,27 +116,27 @@ describe("ProfileExtractor", () => {
             makeMessage("user", "Always use ESLint"),
             makeMessage("user", "Keep code clean"),
           ]),
-          prompt: promptMock,
         },
       };
 
       const extractor = createProfileExtractor({
         client,
+        aiService: mockAiService,
         profileStore,
         config: makeConfig({ profileExtractionMinPrompts: 3 }),
         logger: mockLogger,
       });
 
       await extractor.extract("session-1");
-      expect(promptMock).toHaveBeenCalledTimes(1);
+      expect(mockAiService.complete).toHaveBeenCalledTimes(1);
     });
   });
 
   describe("extract user-only filter", () => {
     test("filters out assistant messages and only analyzes user text", async () => {
       let capturedPrompt = "";
-      const promptMock = mock(async (promptText: string) => {
-        capturedPrompt = promptText;
+      const mockAiService = makeMockAiService(async (promptText: unknown) => {
+        capturedPrompt = promptText as string;
         return JSON.stringify({ preferences: [], patterns: [], workflows: [] });
       });
 
@@ -136,12 +148,12 @@ describe("ProfileExtractor", () => {
             makeMessage("user", "Always use ESLint"),
             makeMessage("user", "Keep code clean"),
           ]),
-          prompt: promptMock,
         },
       };
 
       const extractor = createProfileExtractor({
         client,
+        aiService: mockAiService,
         profileStore,
         config: makeConfig({ profileExtractionMinPrompts: 3 }),
         logger: mockLogger,
@@ -156,8 +168,8 @@ describe("ProfileExtractor", () => {
   describe("extract max messages limit", () => {
     test("limits analyzed messages to configured tail window", async () => {
       let capturedPrompt = "";
-      const promptMock = mock(async (promptText: string) => {
-        capturedPrompt = promptText;
+      const mockAiService = makeMockAiService(async (promptText: unknown) => {
+        capturedPrompt = promptText as string;
         return JSON.stringify({ preferences: [], patterns: [], workflows: [] });
       });
 
@@ -169,12 +181,12 @@ describe("ProfileExtractor", () => {
       const client = {
         session: {
           messages: mock(async () => messages),
-          prompt: promptMock,
         },
       };
 
       const extractor = createProfileExtractor({
         client,
+        aiService: mockAiService,
         profileStore,
         config: makeConfig({ profileExtractionMinPrompts: 3, profileMaxMessagesPerExtraction: 5 }),
         logger: mockLogger,
@@ -189,6 +201,29 @@ describe("ProfileExtractor", () => {
 
   describe("extract profile merge", () => {
     test("merges extracted profile into profile store", async () => {
+      const mockAiService = makeMockAiService(async () =>
+        JSON.stringify({
+          preferences: [
+            {
+              key: "lang",
+              value: "TypeScript",
+              confidence: 0.85,
+              evidence: ["I prefer TS"],
+              updatedAt: Date.now(),
+            },
+          ],
+          patterns: [
+            {
+              key: "tdd",
+              description: "Test-driven",
+              frequency: 3,
+              lastSeen: Date.now(),
+            },
+          ],
+          workflows: [],
+        })
+      );
+
       const client = {
         session: {
           messages: mock(async () => [
@@ -196,33 +231,12 @@ describe("ProfileExtractor", () => {
             makeMessage("user", "Always use TDD"),
             makeMessage("user", "Keep code clean"),
           ]),
-          prompt: mock(async () =>
-            JSON.stringify({
-              preferences: [
-                {
-                  key: "lang",
-                  value: "TypeScript",
-                  confidence: 0.85,
-                  evidence: ["I prefer TS"],
-                  updatedAt: Date.now(),
-                },
-              ],
-              patterns: [
-                {
-                  key: "tdd",
-                  description: "Test-driven",
-                  frequency: 3,
-                  lastSeen: Date.now(),
-                },
-              ],
-              workflows: [],
-            })
-          ),
         },
       };
 
       const extractor = createProfileExtractor({
         client,
+        aiService: mockAiService,
         profileStore,
         config: makeConfig({ profileExtractionMinPrompts: 3 }),
         logger: mockLogger,
@@ -240,7 +254,11 @@ describe("ProfileExtractor", () => {
   });
 
   describe("extract error handling", () => {
-    test("does not throw when session.prompt fails", async () => {
+    test("does not throw when aiService.complete fails", async () => {
+      const mockAiService = makeMockAiService(async () => {
+        throw new Error("AI service unavailable");
+      });
+
       const client = {
         session: {
           messages: mock(async () => [
@@ -248,14 +266,12 @@ describe("ProfileExtractor", () => {
             makeMessage("user", "Always use TDD"),
             makeMessage("user", "Keep code clean"),
           ]),
-          prompt: mock(async () => {
-            throw new Error("AI service unavailable");
-          }),
         },
       };
 
       const extractor = createProfileExtractor({
         client,
+        aiService: mockAiService,
         profileStore,
         config: makeConfig({ profileExtractionMinPrompts: 3 }),
         logger: mockLogger,
@@ -266,6 +282,8 @@ describe("ProfileExtractor", () => {
     });
 
     test("does not throw when JSON response is malformed", async () => {
+      const mockAiService = makeMockAiService(async () => "not valid json");
+
       const client = {
         session: {
           messages: mock(async () => [
@@ -273,12 +291,12 @@ describe("ProfileExtractor", () => {
             makeMessage("user", "Always use TDD"),
             makeMessage("user", "Keep code clean"),
           ]),
-          prompt: mock(async () => "not valid json"),
         },
       };
 
       const extractor = createProfileExtractor({
         client,
+        aiService: mockAiService,
         profileStore,
         config: makeConfig({ profileExtractionMinPrompts: 3 }),
         logger: mockLogger,
