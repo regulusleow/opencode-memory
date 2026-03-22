@@ -1,4 +1,4 @@
-import type { Memory, MemorySearchResult, UserProfile } from "../types.js";
+import type { Memory, MemorySearchResult, UserProfile, MemoryStats, ImportResult } from "../types.js";
 
 /**
  * 格式化搜索结果用于对话上下文或搜索结果展示
@@ -78,9 +78,45 @@ export function formatHelp(): string {
 4. forget - Delete a specific memory by ID
 5. profile - View or manage your user profile (actions: show, analyze, delete, reset)
 6. web - Start the web UI dashboard
-7. help - Show this help message
+7. stats - Show memory statistics (total count, by type, oldest/newest)
+8. export - Export all memories as JSON (for backup or migration)
+9. import - Import memories from a JSON export (provide content as JSON)
+10. help - Show this help message
 
 Use any of these modes to manage your persistent memories across sessions.`;
+}
+
+export function formatStats(stats: MemoryStats): string {
+  const lines = [
+    `Memory Stats:`,
+    `  Total: ${stats.total}`,
+    `  By Type:`,
+    ...Object.entries(stats.byType).map(([type, count]) => `    ${type}: ${count}`),
+    `  By Status:`,
+    ...Object.entries(stats.byEmbeddingStatus).map(([status, count]) => `    ${status}: ${count}`),
+  ];
+  
+  if (stats.oldest !== null && stats.oldest !== undefined) {
+    const oldestVal = stats.oldest as any;
+    const oldestTime = typeof oldestVal === 'number' ? oldestVal : (oldestVal.createdAt ?? oldestVal);
+    if (oldestTime) {
+      lines.push(`  Oldest: ${new Date(oldestTime).toISOString()}`);
+    }
+  }
+  
+  if (stats.newest !== null && stats.newest !== undefined) {
+    const newestVal = stats.newest as any;
+    const newestTime = typeof newestVal === 'number' ? newestVal : (newestVal.createdAt ?? newestVal);
+    if (newestTime) {
+      lines.push(`  Newest: ${new Date(newestTime).toISOString()}`);
+    }
+  }
+  
+  return lines.join("\n");
+}
+
+export function formatImportResult(result: ImportResult): string {
+  return `Import complete: ${result.imported} imported, ${result.skipped} skipped.`;
 }
 
 export function formatProfileDisplay(profile: UserProfile): string {

@@ -7,6 +7,8 @@ import {
   formatMemoryList,
   formatHelp,
   formatProfileDisplay,
+  formatStats,
+  formatImportResult,
 } from "./context.js";
 
 interface ProfileExtractor {
@@ -17,35 +19,6 @@ export interface MemoryToolOptions {
   profileStore?: ProfileStore;
   profileExtractor?: ProfileExtractor;
   onWebStart?: () => string;
-}
-
-function formatStats(stats: MemoryStats): string {
-  const lines = [
-    `Memory Stats:`,
-    `  Total: ${stats.total}`,
-    `  By Type:`,
-    ...Object.entries(stats.byType).map(([type, count]) => `    ${type}: ${count}`),
-    `  By Status:`,
-    ...Object.entries(stats.byEmbeddingStatus).map(([status, count]) => `    ${status}: ${count}`),
-  ];
-  
-  if (stats.oldest !== null && stats.oldest !== undefined) {
-    const oldestVal = stats.oldest as any;
-    const oldestTime = typeof oldestVal === 'number' ? oldestVal : (oldestVal.createdAt ?? oldestVal);
-    if (oldestTime) {
-      lines.push(`  Oldest: ${new Date(oldestTime).toISOString()}`);
-    }
-  }
-  
-  if (stats.newest !== null && stats.newest !== undefined) {
-    const newestVal = stats.newest as any;
-    const newestTime = typeof newestVal === 'number' ? newestVal : (newestVal.createdAt ?? newestVal);
-    if (newestTime) {
-      lines.push(`  Newest: ${new Date(newestTime).toISOString()}`);
-    }
-  }
-  
-  return lines.join("\n");
 }
 
 export function createMemoryTool(
@@ -195,21 +168,21 @@ export function createMemoryTool(
               return JSON.stringify(exportData);
             }
 
-            case "import": {
-              if (!args.content) {
-                return "Error: content is required for import mode. Provide the JSON export data as content.";
-              }
+             case "import": {
+               if (!args.content) {
+                 return "Error: content is required for import mode. Provide the JSON export data as content.";
+               }
 
-              let data: ExportData;
-              try {
-                data = JSON.parse(args.content);
-              } catch {
-                return "Error: invalid JSON. Content must be a valid JSON export from mode=export.";
-              }
+               let data: ExportData;
+               try {
+                 data = JSON.parse(args.content);
+               } catch {
+                 return "Error: invalid JSON. Content must be a valid JSON export from mode=export.";
+               }
 
-              const result = await (store as any).importMemories(data);
-              return `Import complete: ${result.imported} imported, ${result.skipped} skipped.`;
-            }
+               const result = await (store as any).importMemories(data);
+               return formatImportResult(result);
+             }
 
             default:
              return `Unknown mode: ${mode}. Use help for usage.`;
