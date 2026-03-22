@@ -39,6 +39,10 @@ export interface PluginConfig {
   profileMaxMessagesPerExtraction: number;
   webServerPort: number;
   logLevel: "debug" | "info" | "warn" | "error" | "silent";
+  aiApiUrl?: string;
+  aiApiKey?: string;
+  aiModel?: string;
+  autoCaptureMode?: "heuristic" | "ai" | "hybrid";
 }
 
 export interface ProfilePreference {
@@ -83,3 +87,16 @@ export interface ProfileChangelog {
   newValue: string | null;
   timestamp: number;
 }
+
+export interface AiExtractionResult {
+  memories: Array<{
+    content: string;
+    tags: string;
+  }>;
+}
+
+export interface AiService {
+  complete(prompt: string, jsonSchema?: Record<string, unknown>): Promise<string>;
+  isConfigured(): boolean;
+}
+
