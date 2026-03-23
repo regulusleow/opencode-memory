@@ -1,5 +1,17 @@
 import type { Memory, MemorySearchResult, UserProfile, MemoryStats, ImportResult } from "../types.js";
 
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+export function truncateContent(content: string, maxLength: number): string {
+  if (content.length <= maxLength) return content;
+  const truncated = content.slice(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(" ");
+  const cutPoint = lastSpace > 0 ? lastSpace : maxLength;
+  return content.slice(0, cutPoint) + "...";
+}
+
 /**
  * 格式化搜索结果用于对话上下文或搜索结果展示
  * @param memories 搜索到的记忆结果
@@ -18,7 +30,7 @@ export function formatMemoryContext(
     const items = memories
       .map((mem) => {
         const dateStr = new Date(mem.createdAt).toISOString().split("T")[0];
-        return `${mem.content} (tags: ${mem.tags}, created: ${dateStr})`;
+        return `${truncateContent(mem.content, 200)} (tags: ${mem.tags}, created: ${dateStr})`;
       })
       .map((item, index) => `${index + 1}. ${item}`)
       .join("\n");

@@ -3,6 +3,8 @@ import {
   formatMemoryContext,
   formatMemoryList,
   formatHelp,
+  estimateTokens,
+  truncateContent,
 } from "../src/services/context.js";
 import type { Memory, MemorySearchResult } from "../src/types.js";
 
@@ -129,5 +131,116 @@ describe("context formatting", () => {
     expect(result).toContain("list");
     expect(result).toContain("forget");
     expect(result).toContain("help");
+  });
+});
+
+describe("token estimation and truncation", () => {
+  it("estimateTokens returns 0 for empty string", () => {
+    expect(estimateTokens("")).toBe(0);
+  });
+
+  it("estimateTokens returns Math.ceil(length / 4)", () => {
+    expect(estimateTokens("hello")).toBe(2); // Math.ceil(5/4) = 2
+    expect(estimateTokens("a".repeat(400))).toBe(100); // Math.ceil(400/4) = 100
+    expect(estimateTokens("short")).toBe(2); // Math.ceil(5/4) = 2
+  });
+
+  it("truncateContent returns original if <= maxLength", () => {
+    expect(truncateContent("short", 200)).toBe("short");
+    expect(truncateContent("", 200)).toBe("");
+    expect(truncateContent("hello", 5)).toBe("hello");
+  });
+
+  it("truncateContent truncates at word boundary with ellipsis", () => {
+    const result = truncateContent("word1 word2 word3 word4 word5", 15);
+    expect(result).toEndWith("...");
+    expect(result.length).toBeLessThanOrEqual(18); // 15 + 3 for "..."
+    expect(result).toContain("word1");
+    expect(result).not.toContain("word5");
+  });
+
+  it("truncateContent handles text with no spaces (hard cut)", () => {
+    const result = truncateContent("no-spaces-at-all-verylongtext", 10);
+    expect(result).toBe("no-spaces-...");
+    expect(result.length).toBeLessThanOrEqual(13); // 10 + 3
+  });
+
+  it("truncateContent handles long content with ellipsis", () => {
+    const longText = "a".repeat(300);
+    const result = truncateContent(longText, 200);
+    expect(result.length).toBeLessThanOrEqual(203); // 200 + 3 for "..."
+    expect(result).toEndWith("...");
+  });
+});
+
+describe("formatMemoryContext chat truncation", () => {
+  it("chat mode truncates long content (>200 chars)", () => {
+    const longContent = "x".repeat(300);
+    const memories: MemorySearchResult[] = [
+      {
+        id: "mem_001",
+        content: longContent,
+        tags: "test",
+        type: "memory",
+        metadata: {},
+        embeddingStatus: "done",
+        createdAt: 1700000000000,
+        updatedAt: 1700000000000,
+        score: 0.95,
+        distance: 0.05,
+      },
+    ];
+
+    const result = formatMemoryContext(memories, "chat");
+
+    expect(result).toContain("...");
+  });
+
+  it("chat mode does not add ellipsis to short content", () => {
+    const shortContent = "This is a short memory";
+    const memories: MemorySearchResult[] = [
+      {
+        id: "mem_001",
+        content: shortContent,
+        tags: "test",
+        type: "memory",
+        metadata: {},
+        embeddingStatus: "done",
+        createdAt: 1700000000000,
+        updatedAt: 1700000000000,
+        score: 0.95,
+        distance: 0.05,
+      },
+    ];
+
+    const result = formatMemoryContext(memories, "chat");
+
+    // The content itself should not have ellipsis
+    const contentSection = result.split("(tags:")[0];
+    expect(contentSection).not.toContain("...");
+  });
+
+  it("search mode shows full content unchanged", () => {
+    const longContent = "x".repeat(300);
+    const memories: MemorySearchResult[] = [
+      {
+        id: "mem_001",
+        content: longContent,
+        tags: "test",
+        type: "memory",
+        metadata: {},
+        embeddingStatus: "done",
+        createdAt: 1700000000000,
+        updatedAt: 1700000000000,
+        score: 0.95,
+        distance: 0.05,
+      },
+    ];
+
+    const result = formatMemoryContext(memories, "search");
+
+    // Search mode should show full content
+    expect(result).toContain(longContent);
+    expect(result).not.toContain("...\n"); // no truncation ellipsis in content
   });
 });
