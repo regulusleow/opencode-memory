@@ -1,7 +1,7 @@
 import type { MemoryStore } from "./memory-store.js";
 import type { ProfileStore } from "./profile-store.js";
 import type { PluginConfig } from "../types.js";
-import { formatMemoryContext, formatProfileContext } from "./context.js";
+import { formatMemoryContext, formatProfileContext, estimateTokens } from "./context.js";
 
 export const injectedSessions = new Set<string>();
 export const needsReinjection = new Set<string>();
@@ -29,12 +29,26 @@ export function createChatMessageHook(
 
       const memories = await store.search(query, config.contextLimit);
       if (memories.length > 0) {
+        let selectedMemories = memories;
+        if (config.tokenBudget && config.tokenBudget > 0) {
+          selectedMemories = [memories[0]];
+          for (let i = 1; i < memories.length; i++) {
+            const candidate = [...selectedMemories, memories[i]];
+            const formatted = formatMemoryContext(candidate, "chat");
+            if (estimateTokens(formatted) <= config.tokenBudget) {
+              selectedMemories = candidate;
+            } else {
+              break;
+            }
+          }
+        }
+
         const contextPart = {
           id: `prt-memory-context-${Date.now()}`,
           sessionID: input.sessionID,
           messageID: output.message.id,
           type: "text",
-          text: formatMemoryContext(memories, "chat"),
+          text: formatMemoryContext(selectedMemories, "chat"),
           synthetic: true,
         } as any;
 

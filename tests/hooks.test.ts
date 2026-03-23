@@ -300,6 +300,99 @@ describe("createChatMessageHook", () => {
   });
 });
 
+describe("token budget enforcement", () => {
+  beforeEach(() => {
+    injectedSessions.clear();
+    needsReinjection.clear();
+  });
+
+  function countInjectedMemories(output: ReturnType<typeof makeOutput>): number {
+    const memoryPart = output.parts.find((p: any) => p.text?.startsWith("<relevant_memories>"));
+    if (!memoryPart?.text) return 0;
+    return (memoryPart.text.match(/^\d+\.\s/gm) ?? []).length;
+  }
+
+  it("uses all memories when tokenBudget is undefined", async () => {
+    const memories = [
+      makeSearchResult({ id: "mem_1", content: "memory one" }),
+      makeSearchResult({ id: "mem_2", content: "memory two" }),
+      makeSearchResult({ id: "mem_3", content: "memory three" }),
+    ];
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ contextLimit: 5 }));
+    const output = makeOutput("msg_tb_1");
+
+    await hook({ sessionID: "ses_tb_1" }, output);
+
+    expect(countInjectedMemories(output)).toBe(3);
+  });
+
+  it("enforces at-least-1 memory when tokenBudget is too small", async () => {
+    const longContent = "A".repeat(300);
+    const memories = [
+      makeSearchResult({ id: "mem_1", content: longContent }),
+      makeSearchResult({ id: "mem_2", content: longContent }),
+      makeSearchResult({ id: "mem_3", content: longContent }),
+    ];
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ contextLimit: 5, tokenBudget: 50 }));
+    const output = makeOutput("msg_tb_2");
+
+    await hook({ sessionID: "ses_tb_2" }, output);
+
+    expect(countInjectedMemories(output)).toBe(1);
+  });
+
+  it("uses all memories when tokenBudget is large enough", async () => {
+    const memories = [
+      makeSearchResult({ id: "mem_1", content: "memory one" }),
+      makeSearchResult({ id: "mem_2", content: "memory two" }),
+      makeSearchResult({ id: "mem_3", content: "memory three" }),
+    ];
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ contextLimit: 5, tokenBudget: 10000 }));
+    const output = makeOutput("msg_tb_3");
+
+    await hook({ sessionID: "ses_tb_3" }, output);
+
+    expect(countInjectedMemories(output)).toBe(3);
+  });
+
+  it("treats tokenBudget=0 as disabled", async () => {
+    const memories = [
+      makeSearchResult({ id: "mem_1", content: "memory one" }),
+      makeSearchResult({ id: "mem_2", content: "memory two" }),
+      makeSearchResult({ id: "mem_3", content: "memory three" }),
+    ];
+    const store = makeMockStore({ search: mock(async () => memories) });
+    const hook = createChatMessageHook(store, makeConfig({ contextLimit: 5, tokenBudget: 0 }));
+    const output = makeOutput("msg_tb_4");
+
+    await hook({ sessionID: "ses_tb_4" }, output);
+
+    expect(countInjectedMemories(output)).toBe(3);
+  });
+
+  it("still applies contextLimit before token budget filtering", async () => {
+    const memories = [
+      makeSearchResult({ id: "mem_1" }),
+      makeSearchResult({ id: "mem_2" }),
+      makeSearchResult({ id: "mem_3" }),
+    ];
+    const store = makeMockStore({
+      search: mock(async (_query: string, limit = 5) => memories.slice(0, limit)),
+    });
+    const config = makeConfig({ contextLimit: 2, tokenBudget: 10000 });
+    const hook = createChatMessageHook(store, config);
+    const output = makeOutput("msg_tb_5");
+
+    await hook({ sessionID: "ses_tb_5" }, output);
+
+    expect(store.search).toHaveBeenCalledWith("Hello world", 2);
+    expect(countInjectedMemories(output)).toBe(2);
+  });
+});
+
 function makeProfileDb() {
   const db = createDatabase(":memory:", 0);
   return { db, profileStore: createProfileStore(db) };
