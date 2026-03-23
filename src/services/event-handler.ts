@@ -5,12 +5,13 @@ export function createEventHandler(options: {
   needsReinjection: Set<string>;
   onIdle: (sessionID: string) => Promise<void>;
   onIdleProfile?: (sessionID: string) => Promise<void>;
+  onIdleSummary?: (sessionID: string) => Promise<void>;
   config: PluginConfig;
   logger: Logger;
 }): (input: {
   event: { type: string; properties: { sessionID: string } };
 }) => Promise<void> {
-  const { needsReinjection, onIdle, onIdleProfile, config, logger } = options;
+  const { needsReinjection, onIdle, onIdleProfile, onIdleSummary, config, logger } = options;
   const processing = new Map<string, boolean>();
 
   return async (input) => {
@@ -21,7 +22,7 @@ export function createEventHandler(options: {
       const shouldCapture = config.autoCaptureEnabled;
       const shouldExtractProfile = config.profileEnabled && !!onIdleProfile;
 
-      if (!shouldCapture && !shouldExtractProfile) return;
+      if (!shouldCapture && !shouldExtractProfile && !onIdleSummary) return;
       if (processing.get(sessionID)) return;
       processing.set(sessionID, true);
       try {
@@ -33,6 +34,16 @@ export function createEventHandler(options: {
             await onIdleProfile!(sessionID);
           } catch (error) {
             logger.error("Profile extraction failed", {
+              sessionID,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+        if (onIdleSummary) {
+          try {
+            await onIdleSummary(sessionID);
+          } catch (error) {
+            logger.debug("Session summary generation failed", {
               sessionID,
               error: error instanceof Error ? error.message : String(error),
             });
