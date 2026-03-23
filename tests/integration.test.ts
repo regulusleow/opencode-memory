@@ -10,8 +10,12 @@ import { createVectorBackend } from "../src/services/vector-backend.js";
 import { createMemoryTool } from "../src/services/tool.js";
 import { createPrivacyFilter } from "../src/services/privacy.js";
 import { createDedupService } from "../src/services/dedup.js";
+import { runMigrations } from "../src/services/migration-runner.js";
+import { memoryMigrations } from "../src/services/migrations.js";
 import type { PluginConfig } from "../src/types.js";
 import type { EmbeddingService } from "../src/services/embedding.js";
+
+const silentLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 
 const tempDirs: string[] = [];
 
@@ -47,6 +51,11 @@ function makeConfig(overrides: Partial<PluginConfig> = {}): PluginConfig {
     autoCaptureDelay: 10000,
     autoCaptureMinImportance: 6,
     searchLayersEnabled: true,
+    profileEnabled: true,
+    profileExtractionMinPrompts: 5,
+    profileMaxMessagesPerExtraction: 20,
+    webServerPort: 18080,
+    logLevel: "silent",
     ...overrides,
   };
 }
@@ -102,6 +111,7 @@ describe("plugin integration", () => {
       const config = makeConfig();
 
     const db = createDatabase(":memory:", config.embeddingDimensions);
+    runMigrations(db, memoryMigrations, silentLogger);
 
     try {
       const embeddingService = createApiEmbeddingBackend(config);
@@ -643,6 +653,7 @@ describe("memory store privacy and dedup integration", () => {
   it("boosts rank when query word appears in tags", async () => {
     const config = makeConfig();
     const db = createDatabase(":memory:", config.embeddingDimensions);
+    runMigrations(db, memoryMigrations, silentLogger);
 
     try {
       const embeddingService: EmbeddingService = {
@@ -673,6 +684,7 @@ describe("memory store privacy and dedup integration", () => {
   it("prefers newer memory when relevance is otherwise equal", async () => {
     const config = makeConfig();
     const db = createDatabase(":memory:", config.embeddingDimensions);
+    runMigrations(db, memoryMigrations, silentLogger);
 
     try {
       const embeddingService: EmbeddingService = {
@@ -709,6 +721,7 @@ describe("memory store privacy and dedup integration", () => {
   it("works with createMemoryStore defaults when optional services are omitted", async () => {
     const config = makeConfig();
     const db = createDatabase(":memory:", config.embeddingDimensions);
+    runMigrations(db, memoryMigrations, silentLogger);
 
     try {
       const embeddingService = makeEmbeddingService();
