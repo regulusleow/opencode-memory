@@ -8,6 +8,7 @@ A memory plugin for [OpenCode](https://opencode.ai) that automatically captures 
 - **Semantic Search**: Finds memories by meaning using vector embeddings, not just keyword matching
 - **Context Injection**: Automatically surfaces relevant past memories at the start of each session
 - **User Profiling**: Learns your preferences, patterns, and workflows across sessions
+- **Session Summaries**: Automatically generates conversation summaries on idle events, stored as memories to maintain continuity
 - **Duplicate Detection**: Prevents redundant memories with configurable similarity threshold
 - **Privacy Filtering**: Excludes sensitive patterns from automatic capture
 - **Web UI**: Browser-based interface for browsing, searching, and managing memories
@@ -62,6 +63,11 @@ Create `~/.config/opencode/opencode-memory.jsonc`:
   "storagePath": "~/.opencode-memory",
   "searchLimit": 5,
   "contextLimit": 3,
+
+  // Token budget for context injection in tokens (optional, disabled by default)
+  // When set, limits how many memories are injected to stay within this token budget
+  // Token count is estimated as: Math.ceil(formatted_text_length / 4)
+  "tokenBudget": 2000,
 
   // Privacy and deduplication
   "privacyPatterns": [],
@@ -174,6 +180,10 @@ Interact with your memory store via the `memory` tool in conversation:
 | `profile` | View or manage user profile data |
 | `web` | Start the web UI |
 | `help` | Show usage information |
+| `stats` | Show memory statistics (total count, by type, oldest/newest) |
+| `export` | Export all memories as JSON for backup or migration |
+| `import` | Import memories from a JSON export file |
+| `timeline` | Show memories grouped by date range |
 
 ## User Profile
 
@@ -195,6 +205,14 @@ A browser-based interface for managing memories:
 - Browse, search, and delete memories
 - View memory statistics and user profile data
 - Starts on-demand via `mode: web`
+
+### Real-time Events
+
+The Web UI supports Server-Sent Events (SSE) for live memory updates:
+
+- Connect to the `/events` endpoint for a real-time event stream
+- Events are emitted when memories change or statistics update
+- Event types: `memory:added`, `memory:deleted`, `memory:imported`, `stats:updated`
 
 ## Development
 
