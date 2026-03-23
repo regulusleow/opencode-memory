@@ -1,4 +1,4 @@
-export type MemoryType = "general" | "decision" | "preference" | "lesson" | "code-pattern" | "bug-fix" | "auto";
+export type MemoryType = "general" | "decision" | "preference" | "lesson" | "code-pattern" | "bug-fix" | "auto" | "session-summary";
 
 export interface Memory {
   id: string;
@@ -18,7 +18,7 @@ export interface MemorySearchResult extends Memory {
   distance: number;
 }
 
-export type MemoryMode = "add" | "search" | "list" | "forget" | "help" | "profile" | "web" | "export" | "import" | "stats";
+export type MemoryMode = "add" | "search" | "list" | "forget" | "help" | "profile" | "web" | "export" | "import" | "stats" | "timeline";
 
 export interface PluginConfig {
   embeddingApiUrl: string;
@@ -135,5 +135,18 @@ export interface ExportData {
 export interface ImportResult {
   imported: number;
   skipped: number;
+}
+
+export interface MemoryEvent {
+  type: "memory:added" | "memory:deleted" | "memory:imported" | "stats:updated";
+  data: unknown;
+  timestamp: number;
+}
+
+export interface EventBus {
+  emit(event: MemoryEvent): void;
+  on(handler: (event: MemoryEvent) => void): () => void;
+  off(handler: (event: MemoryEvent) => void): void;
+  connectionCount(): number;
 }
 
