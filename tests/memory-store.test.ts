@@ -3,6 +3,8 @@ import type { Database } from "bun:sqlite";
 import { generateMemoryId } from "../src/config.js";
 import { createDatabase, closeDatabase } from "../src/services/database.js";
 import { createMemoryStore } from "../src/services/memory-store.js";
+import { runMigrations } from "../src/services/migration-runner.js";
+import { memoryMigrations } from "../src/services/migrations.js";
 import { createVectorBackend } from "../src/services/vector-backend.js";
 import type { EmbeddingService } from "../src/services/embedding.js";
 import type { PluginConfig } from "../src/types.js";
@@ -36,6 +38,11 @@ function makeConfig(): PluginConfig {
     autoCaptureDelay: 10000,
     autoCaptureMinImportance: 6,
     searchLayersEnabled: true,
+    profileEnabled: true,
+    profileExtractionMinPrompts: 5,
+    profileMaxMessagesPerExtraction: 20,
+    webServerPort: 18080,
+    logLevel: "info",
   };
 }
 
@@ -45,6 +52,12 @@ describe("MemoryStore", () => {
 
   beforeEach(async () => {
     db = createDatabase(":memory:", 3);
+    runMigrations(db, memoryMigrations, {
+      debug: () => {},
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+    });
     vectorBackend = await createVectorBackend(db, 3);
   });
 
@@ -62,14 +75,14 @@ describe("MemoryStore", () => {
 
     const added = await store.add("first memory", {
       tags: "ios,objc",
-      type: "note",
+      type: "general",
       metadata: { source: "test" },
     });
 
     expect(added.id).toMatch(/^mem_/);
     expect(added.content).toBe("first memory");
     expect(added.tags).toBe("ios,objc");
-    expect(added.type).toBe("note");
+    expect(added.type).toBe("general");
     expect(added.embeddingStatus).toBe("pending");
 
     const row = db
@@ -436,7 +449,7 @@ describe("MemoryStore", () => {
     );
     await legacyStore.add("legacy test content", {
       tags: "test",
-      type: "test",
+      type: "general",
       metadata: {},
     });
     const results = await legacyStore.search("legacy test", 10);
@@ -449,5 +462,268 @@ describe("MemoryStore", () => {
     const fn = mock((v: string) => v.toUpperCase());
     expect(fn("ok")).toBe("OK");
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  describe("enhanced bonus calculation", () => {
+    it("memory with search_hit_count=10 scores higher than same memory with search_hit_count=0", async () => {
+      const store = createMemoryStore(
+        db,
+        makeMockEmbedding({ error: "embedding down" }),
+        makeConfig(),
+        vectorBackend
+      );
+      const now = Date.now();
+      const createdAt = now - 45 * 24 * 60 * 60 * 1000;
+
+      db.query(
+        "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at, search_hit_count, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        "mem_freq_low",
+        "frequency bonus same content",
+        "",
+        "general",
+        "{}",
+        "done",
+        createdAt,
+        createdAt,
+        0,
+        null
+      );
+      db.query(
+        "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at, search_hit_count, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        "mem_freq_high",
+        "frequency bonus same content",
+        "",
+        "general",
+        "{}",
+        "done",
+        createdAt,
+        createdAt,
+        10,
+        null
+      );
+
+      const results = await store.search("frequency bonus same content", 10);
+      const low = results.find((r) => r.id === "mem_freq_low");
+      const high = results.find((r) => r.id === "mem_freq_high");
+
+      expect(low).toBeDefined();
+      expect(high).toBeDefined();
+      expect((high?.score ?? 0) > (low?.score ?? 0)).toBe(true);
+    });
+
+    it("memory with last_accessed_at 1 day ago scores higher than 90 days ago", async () => {
+      const store = createMemoryStore(
+        db,
+        makeMockEmbedding({ error: "embedding down" }),
+        makeConfig(),
+        vectorBackend
+      );
+      const now = Date.now();
+      const createdAt = now - 45 * 24 * 60 * 60 * 1000;
+
+      db.query(
+        "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at, search_hit_count, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        "mem_access_old",
+        "access bonus same content",
+        "",
+        "general",
+        "{}",
+        "done",
+        createdAt,
+        createdAt,
+        0,
+        now - 90 * 24 * 60 * 60 * 1000
+      );
+      db.query(
+        "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at, search_hit_count, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        "mem_access_new",
+        "access bonus same content",
+        "",
+        "general",
+        "{}",
+        "done",
+        createdAt,
+        createdAt,
+        0,
+        now - 1 * 24 * 60 * 60 * 1000
+      );
+
+      const results = await store.search("access bonus same content", 10);
+      const oldAccess = results.find((r) => r.id === "mem_access_old");
+      const newAccess = results.find((r) => r.id === "mem_access_new");
+
+      expect(oldAccess).toBeDefined();
+      expect(newAccess).toBeDefined();
+      expect((newAccess?.score ?? 0) > (oldAccess?.score ?? 0)).toBe(true);
+    });
+
+    it("search_hit_count=0 gives exactly zero frequency bonus delta vs expected log1p baseline", async () => {
+      const store = createMemoryStore(
+        db,
+        makeMockEmbedding({ error: "embedding down" }),
+        makeConfig(),
+        vectorBackend
+      );
+      const now = Date.now();
+      const createdAt = now - 30 * 24 * 60 * 60 * 1000;
+
+      db.query(
+        "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at, search_hit_count, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        "mem_freq_zero_case",
+        "freq zero unique",
+        "",
+        "general",
+        "{}",
+        "done",
+        createdAt,
+        createdAt,
+        0,
+        null
+      );
+      db.query(
+        "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at, search_hit_count, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        "mem_freq_one_case",
+        "freq one unique",
+        "",
+        "general",
+        "{}",
+        "done",
+        createdAt,
+        createdAt,
+        1,
+        null
+      );
+
+      const zeroResult = (await store.search("freq zero unique", 1))[0];
+      const oneResult = (await store.search("freq one unique", 1))[0];
+
+      expect(zeroResult).toBeDefined();
+      expect(oneResult).toBeDefined();
+
+      const expectedDelta = Math.log1p(1) * 0.003;
+      const actualDelta = (oneResult?.score ?? 0) - (zeroResult?.score ?? 0);
+      expect(Math.abs(actualDelta - expectedDelta)).toBeLessThan(0.0001);
+    });
+
+    it("last_accessed_at=null gives zero access-recency bonus without NaN/crash", async () => {
+      const store = createMemoryStore(
+        db,
+        makeMockEmbedding({ error: "embedding down" }),
+        makeConfig(),
+        vectorBackend
+      );
+      const now = Date.now();
+      const createdAt = now - 30 * 24 * 60 * 60 * 1000;
+
+      db.query(
+        "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at, search_hit_count, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        "mem_access_null",
+        "access null unique",
+        "",
+        "general",
+        "{}",
+        "done",
+        createdAt,
+        createdAt,
+        0,
+        null
+      );
+      db.query(
+        "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at, search_hit_count, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        "mem_access_recent",
+        "access recent unique",
+        "",
+        "general",
+        "{}",
+        "done",
+        createdAt,
+        createdAt,
+        0,
+        now - 1 * 24 * 60 * 60 * 1000
+      );
+
+      const nullResult = (await store.search("access null unique", 1))[0];
+      const recentResult = (await store.search("access recent unique", 1))[0];
+
+      expect(nullResult).toBeDefined();
+      expect(recentResult).toBeDefined();
+      expect(Number.isNaN(nullResult?.score ?? NaN)).toBe(false);
+
+      const expectedAccessBonus = Math.exp(-(1 / 60)) * 0.005;
+      const actualDelta = (recentResult?.score ?? 0) - (nullResult?.score ?? 0);
+      expect(Math.abs(actualDelta - expectedAccessBonus)).toBeLessThan(0.0001);
+    });
+
+    it("all bonus values are non-negative and final score is not negative", async () => {
+      const store = createMemoryStore(
+        db,
+        makeMockEmbedding({ error: "embedding down" }),
+        makeConfig(),
+        vectorBackend
+      );
+      const now = Date.now();
+      const createdAt = now - 30 * 24 * 60 * 60 * 1000;
+
+      db.query(
+        "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at, search_hit_count, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        "mem_negative_inputs",
+        "negative bonus guard unique",
+        "",
+        "general",
+        "{}",
+        "done",
+        createdAt,
+        createdAt,
+        -5,
+        now + 10 * 24 * 60 * 60 * 1000
+      );
+
+      const result = (await store.search("negative bonus guard unique", 1))[0];
+      expect(result).toBeDefined();
+      expect(Number.isNaN(result?.score ?? NaN)).toBe(false);
+      expect((result?.score ?? -1) >= 0).toBe(true);
+    });
+
+    it("combined bonus remains below 0.035 even with extreme values", async () => {
+      const store = createMemoryStore(
+        db,
+        makeMockEmbedding({ error: "embedding down" }),
+        makeConfig(),
+        vectorBackend
+      );
+      const now = Date.now();
+      const createdAt = now;
+
+      db.query(
+        "INSERT INTO memories (id, content, tags, type, metadata, embedding_status, created_at, updated_at, search_hit_count, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        "mem_extreme_bonus",
+        "extreme bonus probe",
+        "extreme bonus probe",
+        "general",
+        "{}",
+        "done",
+        createdAt,
+        createdAt,
+        100000,
+        now
+      );
+
+      const result = (await store.search("extreme bonus probe", 1))[0];
+      expect(result).toBeDefined();
+
+      const baseSingleResultScore = (1 / (60 + 1)) * 2;
+      const bonusOnly = (result?.score ?? 0) - baseSingleResultScore;
+      expect(bonusOnly).toBeLessThan(0.035);
+    });
   });
 });

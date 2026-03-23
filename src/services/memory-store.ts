@@ -237,19 +237,32 @@ export function createMemoryStore(
       const bonuses = new Map<string, number>();
       for (const id of fusedScores.keys()) {
         const row = db
-          .query("SELECT created_at, tags FROM memories WHERE id = ?")
-          .get(id) as { created_at: number; tags: string } | null;
+          .query("SELECT created_at, tags, search_hit_count, last_accessed_at FROM memories WHERE id = ?")
+          .get(id) as {
+            created_at: number;
+            tags: string;
+            search_hit_count: number;
+            last_accessed_at: number | null;
+          } | null;
         if (!row) {
           continue;
         }
 
         const ageDays = (Date.now() - row.created_at) / 86400000;
-        const recencyBonus = Math.exp(-ageDays / 30) * 0.01;
+        const recencyBonus = Math.max(0, Math.min(Math.exp(-ageDays / 30) * 0.01, 0.01));
         const queryWords = query.toLowerCase().split(/\s+/);
         const tagBonus = queryWords.some((w) => (row.tags ?? "").toLowerCase().includes(w))
           ? 0.005
           : 0;
-        bonuses.set(id, recencyBonus + tagBonus);
+        const hitCount = Math.max(0, row.search_hit_count ?? 0);
+        const freqBonus = Math.max(0, Math.min(Math.log1p(hitCount) * 0.003, 0.01));
+        const accessAgeDays = row.last_accessed_at === null
+          ? 0
+          : (Date.now() - row.last_accessed_at) / 86400000;
+        const accessBonus = row.last_accessed_at
+          ? Math.max(0, Math.min(Math.exp(-accessAgeDays / 60) * 0.005, 0.01))
+          : 0;
+        bonuses.set(id, Math.max(0, recencyBonus + tagBonus + freqBonus + accessBonus));
       }
 
       const finalScores = applyPostRRFBonus(fusedScores, bonuses);
