@@ -9,7 +9,7 @@ describe("createMemoryTool", () => {
     expect((toolDef as any).description.length).toBeGreaterThan(0);
   });
 
-  it("returned tool has args with 8 fields", () => {
+  it("returned tool has args with 10 fields", () => {
     const toolDef = createMemoryTool(makeMockStore(), makeConfig({ searchLimit: 5, contextLimit: 3 }));
     const args = (toolDef as any).args;
     expect(args).toBeDefined();
@@ -22,7 +22,9 @@ describe("createMemoryTool", () => {
     expect(keys).toContain("memoryId");
     expect(keys).toContain("limit");
     expect(keys).toContain("action");
-    expect(keys.length).toBe(8);
+    expect(keys).toContain("startDate");
+    expect(keys).toContain("endDate");
+    expect(keys.length).toBe(10);
   });
 
   it("add mode with content returns confirmation string with memory ID", async () => {

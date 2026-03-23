@@ -9,6 +9,7 @@ import {
   formatProfileDisplay,
   formatStats,
   formatImportResult,
+  formatTimeline,
 } from "./context.js";
 
 interface ProfileExtractor {
@@ -31,7 +32,7 @@ export function createMemoryTool(
       "Manage and query project memory. Use 'search' with technical keywords/tags, 'add' to store knowledge, 'profile' to view/manage user profile.",
     args: {
       mode: tool.schema
-        .enum(["add", "search", "list", "forget", "help", "profile", "web", "stats", "export", "import"])
+        .enum(["add", "search", "list", "forget", "help", "profile", "web", "stats", "export", "import", "timeline"])
         .optional(),
       content: tool.schema.string().optional(),
       query: tool.schema.string().optional(),
@@ -40,10 +41,12 @@ export function createMemoryTool(
       memoryId: tool.schema.string().optional(),
       limit: tool.schema.number().optional(),
       action: tool.schema.string().optional(),
+      startDate: tool.schema.string().optional(),
+      endDate: tool.schema.string().optional(),
     },
     async execute(
       args: {
-        mode?: "add" | "search" | "list" | "forget" | "help" | "profile" | "web" | "stats" | "export" | "import";
+        mode?: "add" | "search" | "list" | "forget" | "help" | "profile" | "web" | "stats" | "export" | "import" | "timeline";
         content?: string;
         query?: string;
         tags?: string;
@@ -51,6 +54,8 @@ export function createMemoryTool(
         memoryId?: string;
         limit?: number;
         action?: string;
+        startDate?: string;
+        endDate?: string;
       },
       _toolCtx: { sessionID: string }
     ) {
@@ -85,7 +90,7 @@ export function createMemoryTool(
             const results = await store.search(args.query, args.limit);
             const ids = results.map(m => m.id);
             if (ids.length > 0) {
-              await (store as any).recordSearchHit(ids);
+              await store.recordSearchHit(ids);
             }
             return formatMemoryContext(results, "search");
           }
@@ -159,12 +164,12 @@ export function createMemoryTool(
           }
 
            case "stats": {
-             const stats = await (store as any).getStats();
+             const stats = await store.getStats();
              return formatStats(stats);
            }
 
             case "export": {
-              const exportData = await (store as any).exportAll();
+              const exportData = await store.exportAll();
               return JSON.stringify(exportData);
             }
 
@@ -180,9 +185,35 @@ export function createMemoryTool(
                  return "Error: invalid JSON. Content must be a valid JSON export from mode=export.";
                }
 
-               const result = await (store as any).importMemories(data);
+               const result = await store.importMemories(data);
                return formatImportResult(result);
              }
+
+            case "timeline": {
+              const now = Date.now();
+              const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+
+              let start: number;
+              let end: number;
+
+              if (args.startDate || args.endDate) {
+                start = args.startDate ? new Date(args.startDate).getTime() : sevenDaysAgo;
+                end = args.endDate ? new Date(args.endDate).getTime() : now;
+
+                if (isNaN(start) || isNaN(end)) {
+                  return "Error: invalid date format. Use ISO 8601 format (e.g., 2024-01-15 or 2024-01-15T10:30:00Z).";
+                }
+              } else {
+                start = sevenDaysAgo;
+                end = now;
+              }
+
+              const memories = await store.listByDateRange(start, end, {
+                limit: args.limit,
+                type: args.type,
+              });
+              return formatTimeline(memories);
+            }
 
             default:
              return `Unknown mode: ${mode}. Use help for usage.`;

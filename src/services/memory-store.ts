@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { generateMemoryId } from "../config.js";
 import type { EmbeddingService } from "./embedding.js";
-import type { Memory, MemorySearchResult, PluginConfig, MemoryType, MemoryStats, ExportData, ExportedMemory, ImportResult } from "../types.js";
+import type { Memory, MemorySearchResult, PluginConfig, MemoryType, MemoryStats, ExportData, ExportedMemory, ImportResult, EventBus } from "../types.js";
 import type { VectorBackend } from "./vector-backend.js";
 import type { PrivacyFilter } from "./privacy.js";
 import type { DedupService } from "./dedup.js";
@@ -28,6 +28,11 @@ export interface MemoryStore {
   recordSearchHit(ids: string[]): Promise<void>;
   exportAll(): Promise<ExportData>;
   importMemories(data: ExportData): Promise<ImportResult>;
+  listByDateRange(
+    start: number,
+    end: number,
+    options?: { limit?: number; offset?: number; type?: string }
+  ): Promise<Memory[]>;
 }
 
 function rowToMemory(row: any): Memory {
@@ -60,7 +65,8 @@ export function createMemoryStore(
   vectorBackend: VectorBackend,
   privacyFilter?: PrivacyFilter,
   dedupService?: DedupService,
-  logger?: Logger
+  logger?: Logger,
+  eventBus?: EventBus
 ): MemoryStore {
   const _privacyFilter = privacyFilter ?? { filter: (c: string) => c };
   const _dedupService = dedupService ?? {
@@ -87,14 +93,18 @@ export function createMemoryStore(
       try {
         content = _privacyFilter.filter(content);
 
-        const exactCheck = _dedupService.checkExact(content);
-        if (exactCheck.isDuplicate && exactCheck.existingId) {
-          const existingRow = db
-            .query("SELECT * FROM memories WHERE id = ?")
-            .get(exactCheck.existingId) as any | null;
-          if (existingRow) {
-            return rowToMemory(existingRow);
+        try {
+          const exactCheck = _dedupService.checkExact(content);
+          if (exactCheck.isDuplicate && exactCheck.existingId) {
+            const existingRow = db
+              .query("SELECT * FROM memories WHERE id = ?")
+              .get(exactCheck.existingId) as any | null;
+            if (existingRow) {
+              return rowToMemory(existingRow);
+            }
           }
+        } catch {
+          // dedup check failed — proceed with insert
         }
 
         db.query(
@@ -141,7 +151,9 @@ export function createMemoryStore(
           };
         }
 
-        return rowToMemory(stored);
+        const result = rowToMemory(stored);
+        eventBus?.emit({ type: "memory:added", data: { id: result.id, content: result.content }, timestamp: Date.now() });
+        return result;
       } catch {
         return {
           id,
@@ -284,7 +296,11 @@ export function createMemoryStore(
 
         await vectorBackend.remove(memoryId);
 
-        return deleted.changes > 0;
+        const success = deleted.changes > 0;
+        if (success) {
+          eventBus?.emit({ type: "memory:deleted", data: { id: memoryId }, timestamp: Date.now() });
+        }
+        return success;
       } catch {
         return false;
       }
@@ -485,7 +501,34 @@ export function createMemoryStore(
         }
       }
 
-      return { imported, skipped };
+      const result = { imported, skipped };
+      if (imported > 0) {
+        eventBus?.emit({ type: "memory:imported", data: { imported, skipped }, timestamp: Date.now() });
+      }
+      return result;
+    },
+
+    async listByDateRange(start, end, options) {
+      const finalLimit = options?.limit ?? config.searchLimit;
+      const finalOffset = options?.offset ?? 0;
+
+      try {
+        let query = "SELECT * FROM memories WHERE created_at >= ? AND created_at <= ?";
+        const params: any[] = [start, end];
+
+        if (options?.type) {
+          query += " AND type = ?";
+          params.push(options.type);
+        }
+
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+        params.push(finalLimit, finalOffset);
+
+        const rows = db.query(query).all(...params) as any[];
+        return rows.map((row) => rowToMemory(row));
+      } catch {
+        return [];
+      }
     },
   };
 }

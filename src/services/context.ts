@@ -65,6 +65,31 @@ export function formatMemoryList(memories: Memory[]): string {
   return `Memories (${memories.length} total):\n\n${items}`;
 }
 
+export function formatTimeline(memories: Memory[]): string {
+  if (memories.length === 0) {
+    return "No memories found in the specified date range.";
+  }
+
+  const groups = new Map<string, Memory[]>();
+  for (const mem of memories) {
+    const dateStr = new Date(mem.createdAt).toISOString().split("T")[0];
+    if (!groups.has(dateStr)) groups.set(dateStr, []);
+    groups.get(dateStr)!.push(mem);
+  }
+
+  const lines: string[] = [`Timeline (${memories.length} total):\n`];
+  for (const [date, mems] of groups) {
+    lines.push(`## ${date} (${mems.length} memories)`);
+    for (const mem of mems) {
+      const preview = mem.content.length > 60 ? mem.content.substring(0, 60) + "..." : mem.content;
+      lines.push(`  [${mem.id}] ${preview} [tags: ${mem.tags}]`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
 /**
  * 返回帮助文本
  * @returns 帮助信息字符串
@@ -82,6 +107,7 @@ export function formatHelp(): string {
 8. export - Export all memories as JSON (for backup or migration)
 9. import - Import memories from a JSON export (provide content as JSON)
 10. help - Show this help message
+11. timeline - Show memories grouped by date range
 
 Use any of these modes to manage your persistent memories across sessions.`;
 }
