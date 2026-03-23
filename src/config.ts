@@ -15,6 +15,7 @@ interface RawPluginConfig {
   storagePath?: unknown;
   searchLimit?: unknown;
   contextLimit?: unknown;
+  tokenBudget?: unknown;
   embeddingBackend?: unknown;
   localModel?: unknown;
   localDtype?: unknown;
@@ -238,6 +239,8 @@ export function getConfig(projectPath: string): PluginConfig {
       typeof raw.searchLimit === "number" ? raw.searchLimit : defaults.searchLimit,
     contextLimit:
       typeof raw.contextLimit === "number" ? raw.contextLimit : defaults.contextLimit,
+    tokenBudget:
+      typeof raw.tokenBudget === "number" ? raw.tokenBudget : undefined,
     embeddingBackend,
     localModel:
       typeof raw.localModel === "string" ? raw.localModel : defaults.localModel,

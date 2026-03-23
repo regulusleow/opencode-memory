@@ -16,6 +16,7 @@ import {
   getProjectStoragePath,
   stripJsonComments,
 } from "../src/config";
+import { makeConfig } from "./helpers";
 
 describe("config module", () => {
   const configPath = join(homedir(), ".config", "opencode", "opencode-memory.jsonc");
@@ -572,12 +573,47 @@ describe("config module", () => {
       delete process.env.TEST_OPENCODE_MEMORY_AI_KEY;
     });
 
-    it("plain aiApiKey is passed through unchanged", () => {
-      writeConfigFile(`{
-   "aiApiKey": "sk-abc123"
+     it("plain aiApiKey is passed through unchanged", () => {
+       writeConfigFile(`{
+    "aiApiKey": "sk-abc123"
 }`);
-      const config = getConfig("/test/project");
-      expect(config.aiApiKey).toBe("sk-abc123");
-    });
-  });
+       const config = getConfig("/test/project");
+       expect(config.aiApiKey).toBe("sk-abc123");
+     });
+   });
+
+   describe("tokenBudget config", () => {
+     it("default config has tokenBudget as undefined", () => {
+       const config = getConfig("/test/project");
+       expect(config.tokenBudget).toBeUndefined();
+     });
+
+     it("custom config with tokenBudget number is accepted", () => {
+       writeConfigFile(`{
+    "tokenBudget": 2000
+}`);
+       const config = getConfig("/test/project");
+       expect(config.tokenBudget).toBe(2000);
+     });
+
+     it("invalid tokenBudget (string) falls back to undefined", () => {
+       writeConfigFile(`{
+    "tokenBudget": "not a number"
+}`);
+       const config = getConfig("/test/project");
+       expect(config.tokenBudget).toBeUndefined();
+     });
+   });
+
+   describe("makeConfig helper with tokenBudget", () => {
+     it("makeConfig without override returns undefined tokenBudget", () => {
+       const config = makeConfig();
+       expect(config.tokenBudget).toBeUndefined();
+     });
+
+     it("makeConfig with tokenBudget override returns the value", () => {
+       const config = makeConfig({ tokenBudget: 2000 });
+       expect(config.tokenBudget).toBe(2000);
+     });
+   });
 });
