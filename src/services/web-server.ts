@@ -1,6 +1,6 @@
 import type { MemoryStore } from "./memory-store.js";
 import type { ProfileStore } from "./profile-store.js";
-import type { PluginConfig, ExportData } from "../types.js";
+import type { PluginConfig, ExportData, EventBus } from "../types.js";
 import type { Logger } from "./logger.js";
 
 interface WebServerOptions {
@@ -9,6 +9,8 @@ interface WebServerOptions {
   config: PluginConfig;
   logger: Logger;
   getHtml?: () => string;
+  eventBus?: EventBus;
+  sseHeartbeatMs?: number;
 }
 
 interface WebServer {
@@ -21,10 +23,11 @@ const DEFAULT_HTML =
   "<html><body><h1>opencode-memory Web UI</h1><p>Loading...</p></body></html>";
 
 export function createWebServer(options: WebServerOptions): WebServer {
-  const { store, profileStore, config, logger, getHtml } = options;
+  const { store, profileStore, config, logger, getHtml, eventBus, sseHeartbeatMs = 30000 } = options;
   let server: ReturnType<typeof Bun.serve> | null = null;
   let running = false;
   let serverUrl = "";
+  const activeCleanups = new Set<() => void>();
 
   const corsHeaders: Record<string, string> = {
     "Access-Control-Allow-Origin": "*",
@@ -38,7 +41,60 @@ export function createWebServer(options: WebServerOptions): WebServer {
     });
   }
 
-  async function handler(req: Request): Promise<Response> {
+  function sseResponse(): Response {
+    if (!eventBus) {
+      return jsonResponse({ error: "Not found" }, 404);
+    }
+
+    let unsubscribe: () => void;
+    let heartbeatTimer: ReturnType<typeof setInterval>;
+
+    const cleanup = () => {
+      clearInterval(heartbeatTimer);
+      unsubscribe?.();
+      activeCleanups.delete(cleanup);
+    };
+    activeCleanups.add(cleanup);
+
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+
+        function enqueue(data: string) {
+          try {
+            controller.enqueue(encoder.encode(data));
+          } catch {
+            // intentionally empty: client disconnected
+          }
+        }
+
+        enqueue(`data: ${JSON.stringify({ type: "connected", timestamp: Date.now() })}\n\n`);
+
+        unsubscribe = eventBus.on((event) => {
+          enqueue(`data: ${JSON.stringify(event)}\n\n`);
+        });
+
+        heartbeatTimer = setInterval(() => {
+          enqueue(`: heartbeat\n\n`);
+        }, sseHeartbeatMs);
+      },
+      cancel() {
+        cleanup();
+      },
+    });
+
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }
+
+  async function handler(req: Request, _srv?: unknown): Promise<Response> {
     const url = new URL(req.url);
     const { pathname } = url;
     const method = req.method;
@@ -52,6 +108,10 @@ export function createWebServer(options: WebServerOptions): WebServer {
             "Access-Control-Allow-Origin": "*",
           },
         });
+      }
+
+      if (method === "GET" && pathname === "/api/events") {
+        return sseResponse();
       }
 
       if (method === "GET" && pathname === "/api/memories") {
@@ -125,16 +185,20 @@ export function createWebServer(options: WebServerOptions): WebServer {
       server = Bun.serve({
         hostname: "127.0.0.1",
         port: config.webServerPort,
-        fetch: handler,
+        fetch: (req, srv) => handler(req, srv),
       });
 
       running = true;
-      serverUrl = `http://127.0.0.1:${config.webServerPort}`;
+      serverUrl = `http://127.0.0.1:${server.port}`;
       logger.info("Web server started", { url: serverUrl });
       return { url: serverUrl };
     },
 
     stop() {
+      for (const cleanup of activeCleanups) {
+        cleanup();
+      }
+      activeCleanups.clear();
       if (server) {
         server.stop();
         server = null;
