@@ -194,7 +194,7 @@ describe("createMemoryTool — profile mode", () => {
 
 describe("createMemoryTool — web mode", () => {
   it("web mode calls onWebStart and returns URL", async () => {
-    const onWebStart = mock(() => "http://127.0.0.1:18080");
+    const onWebStart = mock(() => Promise.resolve("http://127.0.0.1:18080"));
     const tool = createMemoryTool(makeMockStore(), mockConfig, { onWebStart });
     const result = await (tool as any).execute(
       { mode: "web" },

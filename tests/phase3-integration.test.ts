@@ -232,7 +232,7 @@ describe("Phase 3 integration", () => {
       profileStore.saveProfile(makeTestProfile());
       await store.add("phase3 memory", { tags: "phase3,integration" });
 
-      const { url } = webServer.start();
+      const { url } = await webServer.start();
       expect(url).toBe(`http://127.0.0.1:${TEST_WEB_PORT}`);
 
       const profileRes = await fetch(`${url}/api/profile`);

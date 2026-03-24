@@ -135,7 +135,7 @@ describe("export", () => {
     const toolDef = createMemoryTool(store, makeConfig(), {
       profileStore: makeMockProfileStore(),
       profileExtractor: { extract: async () => {} },
-      onWebStart: () => "http://localhost:18080",
+      onWebStart: () => Promise.resolve("http://localhost:18080"),
     });
     
     const result = await (toolDef as any).execute({ mode: "export" }, { sessionID: "test-session" });
@@ -169,7 +169,7 @@ describe("export", () => {
     const toolDef = createMemoryTool(store, makeConfig(), {
       profileStore: makeMockProfileStore(),
       profileExtractor: { extract: async () => {} },
-      onWebStart: () => "http://localhost:18080",
+      onWebStart: () => Promise.resolve("http://localhost:18080"),
     });
     
     const result = await (toolDef as any).execute({ mode: "export" }, { sessionID: "test-session" });
@@ -254,7 +254,7 @@ describe("import", () => {
     const toolDef = createMemoryTool(store, makeConfig(), {
       profileStore: makeMockProfileStore(),
       profileExtractor: { extract: async () => {} },
-      onWebStart: () => "http://localhost:18080",
+      onWebStart: () => Promise.resolve("http://localhost:18080"),
     });
     
     const jsonContent = JSON.stringify({
@@ -285,7 +285,7 @@ describe("import", () => {
     const toolDef = createMemoryTool(store, makeConfig(), {
       profileStore: makeMockProfileStore(),
       profileExtractor: { extract: async () => {} },
-      onWebStart: () => "http://localhost:18080",
+      onWebStart: () => Promise.resolve("http://localhost:18080"),
     });
     
     const result = await (toolDef as any).execute(
@@ -302,7 +302,7 @@ describe("import", () => {
     const toolDef = createMemoryTool(store, makeConfig(), {
       profileStore: makeMockProfileStore(),
       profileExtractor: { extract: async () => {} },
-      onWebStart: () => "http://localhost:18080",
+      onWebStart: () => Promise.resolve("http://localhost:18080"),
     });
     
     const result = await (toolDef as any).execute(

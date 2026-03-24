@@ -10,7 +10,7 @@ describe("SSE /api/events", () => {
   let baseUrl: string;
   let eventBus: ReturnType<typeof createEventBus>;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     eventBus = createEventBus();
     server = createWebServer({
       store: makeMockStore(),
@@ -20,7 +20,7 @@ describe("SSE /api/events", () => {
       eventBus,
       sseHeartbeatMs: 100,
     } as any);
-    const result = server.start();
+    const result = await server.start();
     baseUrl = result.url;
   });
 
@@ -249,7 +249,7 @@ describe("SSE /api/events", () => {
       logger: makeMockLogger(),
     });
 
-    const result = serverNoEventBus.start();
+    const result = await serverNoEventBus.start();
     const url = result.url;
 
     const controller = new AbortController();
@@ -279,7 +279,7 @@ describe("SSE /api/events", () => {
       sseHeartbeatMs: 100,
     } as any);
 
-    const tempResult = tempServer.start();
+    const tempResult = await tempServer.start();
     const tempUrl = tempResult.url;
 
     const controller = new AbortController();

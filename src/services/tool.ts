@@ -19,7 +19,7 @@ interface ProfileExtractor {
 export interface MemoryToolOptions {
   profileStore?: ProfileStore;
   profileExtractor?: ProfileExtractor;
-  onWebStart?: () => string;
+  onWebStart?: () => Promise<string>;
 }
 
 export function createMemoryTool(
@@ -159,7 +159,7 @@ export function createMemoryTool(
             if (!onWebStart) {
               return "Web UI is not available. Please ensure the plugin is properly configured.";
             }
-            const url = onWebStart();
+            const url = await onWebStart();
             return `Web UI started at: ${url}`;
           }
 

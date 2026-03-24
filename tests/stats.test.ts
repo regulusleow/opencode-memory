@@ -163,7 +163,7 @@ describe("stats feature", () => {
         {
           profileStore: makeMockProfileStore(),
           profileExtractor: { extract: mock(async () => {}) },
-          onWebStart: mock(() => "http://localhost:18080"),
+          onWebStart: mock(() => Promise.resolve("http://localhost:18080")),
         }
       );
 
@@ -193,7 +193,7 @@ describe("stats feature", () => {
         {
           profileStore: makeMockProfileStore(),
           profileExtractor: { extract: mock(async () => {}) },
-          onWebStart: mock(() => "http://localhost:18080"),
+          onWebStart: mock(() => Promise.resolve("http://localhost:18080")),
         }
       );
 
@@ -222,7 +222,7 @@ describe("stats feature", () => {
         {
           profileStore: makeMockProfileStore(),
           profileExtractor: { extract: mock(async () => {}) },
-          onWebStart: mock(() => "http://localhost:18080"),
+          onWebStart: mock(() => Promise.resolve("http://localhost:18080")),
         }
       );
 
@@ -276,7 +276,7 @@ describe("stats feature", () => {
         {
           profileStore: makeMockProfileStore(),
           profileExtractor: { extract: mock(async () => {}) },
-          onWebStart: mock(() => "http://localhost:18080"),
+          onWebStart: mock(() => Promise.resolve("http://localhost:18080")),
         }
       );
 
@@ -298,7 +298,7 @@ describe("stats feature", () => {
         {
           profileStore: makeMockProfileStore(),
           profileExtractor: { extract: mock(async () => {}) },
-          onWebStart: mock(() => "http://localhost:18080"),
+          onWebStart: mock(() => Promise.resolve("http://localhost:18080")),
         }
       );
 
@@ -322,7 +322,7 @@ describe("stats feature", () => {
         {
           profileStore: makeMockProfileStore(),
           profileExtractor: { extract: mock(async () => {}) },
-          onWebStart: mock(() => "http://localhost:18080"),
+          onWebStart: mock(() => Promise.resolve("http://localhost:18080")),
         }
       );
 
@@ -345,7 +345,7 @@ describe("stats feature", () => {
         {
           profileStore: makeMockProfileStore(),
           profileExtractor: { extract: mock(async () => {}) },
-          onWebStart: mock(() => "http://localhost:18080"),
+          onWebStart: mock(() => Promise.resolve("http://localhost:18080")),
         }
       );
 
@@ -368,7 +368,7 @@ describe("stats feature", () => {
         {
           profileStore: makeMockProfileStore(),
           profileExtractor: { extract: mock(async () => {}) },
-          onWebStart: mock(() => "http://localhost:18080"),
+          onWebStart: mock(() => Promise.resolve("http://localhost:18080")),
         }
       );
 

@@ -28,9 +28,10 @@
     "access": "public"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.4.0",
     "@opencode-ai/plugin": "latest",
     "@opencode-ai/sdk": "latest",
-    "@huggingface/transformers": "^3.4.0",
+    "opencode-memory": "/Users/machen/Documents/github/opencode-memory",
     "usearch": "^2.21.4"
   },
   "devDependencies": {

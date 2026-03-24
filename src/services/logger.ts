@@ -1,4 +1,6 @@
-import type { OpencodeClient } from "@opencode-ai/sdk";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { expandPath } from "../config.js";
 
 export interface Logger {
   debug(message: string, extra?: Record<string, unknown>): void;
@@ -18,9 +20,10 @@ const LOG_LEVELS: Record<LogLevel, number> = {
 };
 
 export function createLogger(
-  client: OpencodeClient | null,
-  options?: { logLevel?: LogLevel }
+  options?: { storagePath?: string; logLevel?: LogLevel }
 ): Logger {
+  const resolvedPath = options?.storagePath ?? expandPath("~/.opencode-memory");
+  const logsDir = join(resolvedPath, "logs");
   const configuredLevel = LOG_LEVELS[options?.logLevel ?? "debug"];
 
   function _log(
@@ -30,23 +33,28 @@ export function createLogger(
   ): void {
     if (LOG_LEVELS[level] < configuredLevel) return;
 
-    if (client) {
-      client.app
-        .log({
-          body: {
-            service: "opencode-memory",
-            level,
-            message,
-            extra,
-          },
-        })
-        .catch(() => {});
-    } else {
-      if (extra !== undefined) {
-        console[level]("[opencode-memory]", message, extra);
-      } else {
-        console[level]("[opencode-memory]", message);
-      }
+    try {
+      mkdirSync(logsDir, { recursive: true });
+    } catch {
+      // silent - logger must never throw
+    }
+
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toISOString().slice(11, 19);
+    const timestamp = `${dateStr} ${timeStr}`;
+    const levelTag = level.toUpperCase();
+
+    let line = `[${timestamp}] [${levelTag}] ${message}`;
+    if (extra !== undefined) {
+      line += ` ${JSON.stringify(extra)}`;
+    }
+    line += "\n";
+
+    try {
+      appendFileSync(join(logsDir, `${dateStr}.log`), line);
+    } catch {
+      // silent - logger must never throw
     }
   }
 
