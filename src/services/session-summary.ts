@@ -33,7 +33,28 @@ export function createSessionSummary(options: SessionSummaryOptions): SessionSum
         .map((m) => `${m.role}: ${m.content}`)
         .join("\n");
 
-      const prompt = `Summarize the key topics, decisions, and outcomes from this conversation session (ID: ${sessionId}):\n\n${transcript}\n\nProvide a concise summary in 2-4 sentences.`;
+      const prompt = [
+        `Analyze this conversation session (ID: ${sessionId}) and produce a concise summary focused on reusable knowledge.`,
+        "",
+        "Include:",
+        "- Technical findings: API behaviors, library quirks, error root causes, compatibility issues discovered",
+        "- Decisions made and the rationale behind them",
+        "- Concrete solutions or fixes applied",
+        "",
+        "Exclude:",
+        "- What the user asked or tried (narrative)",
+        "- Status updates or progress descriptions",
+        "- Anything that is not actionable in a future session",
+        "",
+        "Write in declarative statements, not past-tense narrative.",
+        "Bad: 'The user fixed a bug by removing response_format'",
+        "Good: 'DeepSeek API rejects requests with response_format json_schema; use prompt-level instructions instead'",
+        "",
+        "Conversation:",
+        transcript,
+        "",
+        "Summary (2-4 sentences, declarative facts and conclusions):",
+      ].join("\n");
 
       return await aiService.complete(prompt);
     },

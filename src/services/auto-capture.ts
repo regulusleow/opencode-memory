@@ -39,16 +39,29 @@ export function getExtractionPrompt(texts: string[]): string {
   const promptLines = texts.map((text, index) => `${index + 1}. ${text}`);
   return [
     "You are a memory extraction engine for a coding assistant.",
-    "Analyze the conversation texts and extract structured memories.",
-    "Identify key decisions, lessons learned, important facts, and user preferences.",
-    "Skip trivial or routine messages that are not useful for future context.",
-    "Return valid JSON with a memories array.",
-    "Each memory entry must include:",
-    "- content: concise summary",
+    "Analyze the user messages and extract reusable, actionable knowledge.",
+    "",
+    "Extract ONLY entries that fall into one of these categories:",
+    "- Technical findings: API behaviors, library quirks, compatibility issues, error root causes",
+    "- Decisions & rationale: architectural choices, technology selections and why",
+    "- Constraints & requirements: explicit rules the user operates under",
+    "- Repeatable workflows: tools, commands, or processes the user relies on",
+    "",
+    "DO NOT extract:",
+    "- Descriptions of what happened ('user encountered X')",
+    "- Status updates or progress reports",
+    "- Routine questions or trivial exchanges",
+    "",
+    "Each memory content must be written as a reusable fact or rule, not a narrative.",
+    "Bad: 'User encountered HTTP 400 when calling DeepSeek API'",
+    "Good: 'DeepSeek API does not support response_format json_schema — use prompt instructions instead'",
+    "",
+    "Return valid JSON with a memories array. Each entry must include:",
+    "- content: the reusable fact or rule (1-2 sentences, declarative)",
     "- tags: comma-separated relevant tags",
     "Limit output to a maximum of 5 entries.",
     "",
-    "Conversation Texts:",
+    "User Messages:",
     ...promptLines,
   ].join("\n");
 }
@@ -149,7 +162,8 @@ export function createAutoCapture(options: {
     try {
       await new Promise((resolve) => setTimeout(resolve, config.autoCaptureDelay));
 
-      const messages = await client.session.messages({ path: { id: sessionID } });
+      const messages = ((await client.session.messages({ path: { id: sessionID } })) as any).data ?? [];
+      logger.debug("Auto-capture messages fetched", { count: messages.length, firstMsg: messages[0] ? JSON.stringify(messages[0]).slice(0, 200) : "none" });
 
       if (config.autoCaptureMode === "heuristic") {
         await runHeuristic(getTextParts(messages));
