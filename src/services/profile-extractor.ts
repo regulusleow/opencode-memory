@@ -41,7 +41,7 @@ export function createProfileExtractor(options: {
 
   async function extract(sessionID: string): Promise<void> {
     try {
-      const messages = await client.session.messages({ path: { id: sessionID } });
+      const messages: SessionMessage[] = ((await client.session.messages({ path: { id: sessionID } })) as any).data ?? [];
       const userTexts = messages
         .filter((message) => message.info?.role === "user")
         .map((message) => getTextFromParts(message.parts ?? []))

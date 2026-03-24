@@ -27,11 +27,11 @@ import { createSessionSummary } from "./services/session-summary.js";
 
 export const plugin: Plugin = async (ctx: PluginInput) => {
   const { directory } = ctx;
-  let logger = createLogger(ctx.client);
+  let logger = createLogger();
 
   try {
     const config = getConfig(directory);
-    logger = createLogger(ctx.client, { logLevel: config.logLevel });
+    logger = createLogger({ storagePath: config.storagePath, logLevel: config.logLevel });
     const dbPath = getProjectStoragePath(config.storagePath, directory);
 
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -79,13 +79,11 @@ export const plugin: Plugin = async (ctx: PluginInput) => {
     const aiService = createAiService({ client: ctx.client as unknown as PromptClient, config, logger });
     const profileExtractor = createProfileExtractor({ client: ctx.client as unknown as ProfileClient, aiService, profileStore, config, logger });
     const webServer = createWebServer({ store, profileStore, config, logger, getHtml: () => getIndexHtml(config.webServerPort), eventBus });
+    await webServer.start();
     const sessionSummary = createSessionSummary({ aiService, store, config, logger });
 
-    const onWebStart = (): string => {
-      if (webServer.isRunning()) {
-        return `http://127.0.0.1:${config.webServerPort}`;
-      }
-      const result = webServer.start();
+    const onWebStart = async (): Promise<string> => {
+      const result = await webServer.start();
       return result.url;
     };
 
@@ -93,8 +91,15 @@ export const plugin: Plugin = async (ctx: PluginInput) => {
     const chatHook = createChatMessageHook(store, config, profileStore);
      const autoCapture = createAutoCapture({ client: ctx.client as any, store, config, logger, aiService });
     const onIdleSummary = async (sessionID: string) => {
-      const messages = await (ctx.client as any).session.messages({ path: { id: sessionID } });
-      const summary = await sessionSummary.generateSummary(sessionID, messages ?? []);
+      const raw: Array<{ info: any; parts: any[] }> = ((await (ctx.client as any).session.messages({ path: { id: sessionID } })) as any).data ?? [];
+      const messages = raw.map((m) => ({
+        role: m.info?.role ?? "unknown",
+        content: (m.parts ?? [])
+          .filter((p: any) => p.type === "text" && typeof p.text === "string")
+          .map((p: any) => p.text as string)
+          .join(" "),
+      })).filter((m) => m.content.trim().length > 0);
+      const summary = await sessionSummary.generateSummary(sessionID, messages);
       if (summary) {
         await sessionSummary.storeSummary(sessionID, summary);
       }

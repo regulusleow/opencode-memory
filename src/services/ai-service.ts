@@ -93,16 +93,6 @@ function createIndependentAiBackend(options: {
         messages: [{ role: "user", content: promptText }],
       };
 
-      if (jsonSchema) {
-        payload.response_format = {
-          type: "json_schema",
-          json_schema: {
-            name: "extraction",
-            schema: jsonSchema,
-            strict: true,
-          },
-        };
-      }
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -135,7 +125,10 @@ function createIndependentAiBackend(options: {
           throw new Error("AI response missing text content");
         }
 
-        return content;
+        logger.debug("AI raw response", { content: content.slice(0, 500) });
+
+        const match = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+        return match ? match[1].trim() : content.trim();
       } catch (error) {
         logger.error("Independent AI completion failed", { error: String(error) });
         throw error;
