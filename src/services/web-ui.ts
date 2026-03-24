@@ -123,6 +123,49 @@ export function getIndexHtml(port: number): string {
       gap: 1rem;
     }
 
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .pagination-info {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      margin-right: 0.5rem;
+    }
+
+    .btn-page {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      cursor: pointer;
+      font-size: 0.875rem;
+      padding: 0.375rem 0.75rem;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+
+    .btn-page:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-page:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .btn-page.active {
+      background-color: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
     .memory-card {
       background-color: var(--panel-bg);
       border: 1px solid var(--border);
@@ -217,6 +260,7 @@ export function getIndexHtml(port: number): string {
       <div id="memories" class="memory-list">
         <div>Loading memories...</div>
       </div>
+      <div id="pagination" class="pagination" style="display:none"></div>
     </main>
   </div>
 
@@ -227,11 +271,14 @@ export function getIndexHtml(port: number): string {
     const els = {
       search: document.getElementById('search'),
       memories: document.getElementById('memories'),
+      pagination: document.getElementById('pagination'),
       stats: document.getElementById('stats'),
       profile: document.getElementById('profile')
     };
 
     let searchTimeout;
+    let currentPage = 1;
+    const PAGE_SIZE = 20;
 
     async function loadStats() {
       try {
@@ -269,35 +316,88 @@ export function getIndexHtml(port: number): string {
       }
     }
 
-    async function loadMemories(query = '') {
+    function renderMemories(memories) {
+      if (memories.length === 0) {
+        els.memories.innerHTML = '<div style="color: var(--text-muted)">No memories found.</div>';
+        return;
+      }
+      els.memories.innerHTML = memories.map(m => \`
+        <div class="memory-card">
+          <div class="memory-header">
+            <div class="tags">
+              \${m.metadata && m.metadata.tags ? m.metadata.tags.map(t => \`<span class="tag">\${t}</span>\`).join('') : ''}
+            </div>
+            <button class="btn btn-delete" onclick="deleteMemory('\${m.id}')">Delete</button>
+          </div>
+          <div class="memory-content">\${escapeHtml(m.content)}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">ID: \${m.id}</div>
+        </div>
+      \`).join('');
+    }
+
+    function renderPagination(page, totalPages, total) {
+      if (totalPages <= 1) {
+        els.pagination.style.display = 'none';
+        return;
+      }
+
+      els.pagination.style.display = 'flex';
+
+      const from = (page - 1) * PAGE_SIZE + 1;
+      const to = Math.min(page * PAGE_SIZE, total);
+
+      let html = \`<span class="pagination-info">\${from}–\${to} of \${total}</span>\`;
+      html += \`<button class="btn-page" onclick="goToPage(1)" \${page === 1 ? 'disabled' : ''}>«</button>\`;
+      html += \`<button class="btn-page" onclick="goToPage(\${page - 1})" \${page === 1 ? 'disabled' : ''}>‹</button>\`;
+
+      const range = getPageRange(page, totalPages);
+      for (const p of range) {
+        if (p === '...') {
+          html += \`<span style="color:var(--text-muted);padding:0 0.25rem">…</span>\`;
+        } else {
+          html += \`<button class="btn-page\${p === page ? ' active' : ''}" onclick="goToPage(\${p})">\${p}</button>\`;
+        }
+      }
+
+      html += \`<button class="btn-page" onclick="goToPage(\${page + 1})" \${page === totalPages ? 'disabled' : ''}>›</button>\`;
+      html += \`<button class="btn-page" onclick="goToPage(\${totalPages})" \${page === totalPages ? 'disabled' : ''}>»</button>\`;
+
+      els.pagination.innerHTML = html;
+    }
+
+    function getPageRange(current, total) {
+      if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+      if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
+      if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+      return [1, '...', current - 1, current, current + 1, '...', total];
+    }
+
+    async function loadMemories(query = '', page = 1) {
       try {
-        const url = query ? \`\${BASE_URL}/api/memories?q=\${encodeURIComponent(query)}\` : \`\${BASE_URL}/api/memories\`;
+        let url;
+        if (query) {
+          url = \`\${BASE_URL}/api/memories?q=\${encodeURIComponent(query)}\`;
+        } else {
+          url = \`\${BASE_URL}/api/memories?page=\${page}&limit=\${PAGE_SIZE}\`;
+        }
         const res = await fetch(url);
         const data = await res.json();
-        
-        // Handle search response structure which is { memories: [...] } vs list which is [...]
-        const memories = Array.isArray(data) ? data : (data.memories || []);
-        
-        if (memories.length === 0) {
-          els.memories.innerHTML = '<div style="color: var(--text-muted)">No memories found.</div>';
-          return;
-        }
 
-        els.memories.innerHTML = memories.map(m => \`
-          <div class="memory-card">
-            <div class="memory-header">
-              <div class="tags">
-                \${m.metadata && m.metadata.tags ? m.metadata.tags.map(t => \`<span class="tag">\${t}</span>\`).join('') : ''}
-              </div>
-              <button class="btn btn-delete" onclick="deleteMemory('\${m.id}')">Delete</button>
-            </div>
-            <div class="memory-content">\${escapeHtml(m.content)}</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">ID: \${m.id}</div>
-          </div>
-        \`).join('');
+        const memories = data.memories ?? (Array.isArray(data) ? data : []);
+        const total = data.total ?? memories.length;
+        const totalPages = data.totalPages ?? 1;
+
+        renderMemories(memories);
+        renderPagination(page, totalPages, total);
       } catch (err) {
         els.memories.innerHTML = '<div style="color: var(--danger)">Error loading memories</div>';
       }
+    }
+
+    function goToPage(page) {
+      currentPage = page;
+      loadMemories(els.search.value, currentPage);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     async function deleteMemory(id) {
@@ -308,7 +408,7 @@ export function getIndexHtml(port: number): string {
       try {
         const res = await fetch(\`\${BASE_URL}/api/memories/\${id}\`, { method: 'DELETE' });
         if (res.ok) {
-          loadMemories(els.search.value);
+          loadMemories(els.search.value, currentPage);
           loadStats();
         } else {
           alert('Failed to delete memory');
@@ -331,14 +431,15 @@ export function getIndexHtml(port: number): string {
     els.search.addEventListener('input', (e) => {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(() => {
-        loadMemories(e.target.value);
+        currentPage = 1;
+        loadMemories(e.target.value, currentPage);
       }, 300);
     });
 
     // Initialize
     loadStats();
     loadProfile();
-    loadMemories();
+    loadMemories('', currentPage);
   </script>
 </body>
 </html>`;

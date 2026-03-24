@@ -37,20 +37,20 @@ describe("Web Server", () => {
   };
   const profileStore = makeMockProfileStore({ getProfile: mock(() => profileData) });
 
-  beforeAll(() => {
+  beforeAll(async () => {
     (store.list as any).mockImplementation(() => Promise.resolve([testMemory]));
     (store.search as any).mockImplementation(() => Promise.resolve([testSearchResult]));
     (store.forget as any).mockImplementation((id: string) => Promise.resolve(id === "mem-1"));
     (store.add as any).mockImplementation(() => Promise.resolve(testMemory));
     (store.get as any).mockImplementation(() => Promise.resolve(testMemory));
-    
+
     server = createWebServer({
       store,
       profileStore,
-      config: makeConfig(),
+      config: makeConfig({ webServerPort: TEST_PORT }),
       logger: makeMockLogger(),
     });
-    const result = server.start();
+    const result = await server.start();
     baseUrl = result.url;
   });
 
@@ -62,8 +62,8 @@ describe("Web Server", () => {
     expect(server.isRunning()).toBe(true);
   });
 
-  test("start() is idempotent", () => {
-    const result = server.start();
+  test("start() is idempotent", async () => {
+    const result = await server.start();
     expect(result.url).toBe(baseUrl);
   });
 
@@ -158,7 +158,7 @@ describe("Web Server", () => {
         config: makeConfig({ webServerPort: 19082 }),
         logger: makeMockLogger(),
       });
-      server2.start();
+      await server2.start();
       try {
         const res = await fetch("http://127.0.0.1:19082/api/profile");
         expect(res.status).toBe(200);
@@ -307,7 +307,7 @@ describe("Web Server", () => {
         logger: makeMockLogger(),
         getHtml: () => customHtml,
       });
-      server3.start();
+      await server3.start();
       try {
         const res = await fetch("http://127.0.0.1:19083/");
         const text = await res.text();
@@ -320,22 +320,36 @@ describe("Web Server", () => {
 });
 
 describe("Web Server — stop behavior", () => {
-  test("isRunning() returns false after stop", () => {
+  test("isRunning() returns false after stop", async () => {
     const server = createWebServer({
       store: makeMockStore(),
       profileStore: makeMockProfileStore(),
       config: makeConfig({ webServerPort: 19084 }),
       logger: makeMockLogger(),
     });
-    server.start();
+    await server.start();
     expect(server.isRunning()).toBe(true);
     server.stop();
+    expect(server.isRunning()).toBe(false);
+  });
+
+  test("start() after stop() returns url without restarting server", async () => {
+    const server = createWebServer({
+      store: makeMockStore(),
+      profileStore: makeMockProfileStore(),
+      config: makeConfig({ webServerPort: 19086 }),
+      logger: makeMockLogger(),
+    });
+    await server.start();
+    server.stop();
+    const result = await server.start();
+    expect(result.url).toContain("127.0.0.1");
     expect(server.isRunning()).toBe(false);
   });
 });
 
 describe("Web Server — port conflict", () => {
-  test("throws when port already in use", () => {
+  test("second server enters standby mode instead of throwing", async () => {
     const server1 = createWebServer({
       store: makeMockStore(),
       profileStore: makeMockProfileStore(),
@@ -348,11 +362,36 @@ describe("Web Server — port conflict", () => {
       config: makeConfig({ webServerPort: 19085 }),
       logger: makeMockLogger(),
     });
-    server1.start();
+    await server1.start();
     try {
-      expect(() => server2.start()).toThrow();
+      const result = await server2.start();
+      expect(result.url).toContain("127.0.0.1:19085");
+      expect(server1.isRunning()).toBe(true);
+      expect(server2.isRunning()).toBe(false);
     } finally {
       server1.stop();
+      server2.stop();
     }
+  });
+
+  test("standby does not become owner after stop() is called on it", async () => {
+    const server1 = createWebServer({
+      store: makeMockStore(),
+      profileStore: makeMockProfileStore(),
+      config: makeConfig({ webServerPort: 19087 }),
+      logger: makeMockLogger(),
+    });
+    const server2 = createWebServer({
+      store: makeMockStore(),
+      profileStore: makeMockProfileStore(),
+      config: makeConfig({ webServerPort: 19087 }),
+      logger: makeMockLogger(),
+    });
+    await server1.start();
+    await server2.start();
+    expect(server2.isRunning()).toBe(false);
+    server2.stop();
+    server1.stop();
+    expect(server2.isRunning()).toBe(false);
   });
 });
